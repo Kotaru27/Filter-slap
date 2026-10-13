@@ -163,8 +163,12 @@ fun FilterSlapApp() {
                     "${decision.parameter}${if (decision.regionMask != "Global") " (${decision.regionMask})" else ""}"
                 }
                 val enriched = frameAnalysis.copy(report = frameAnalysis.report.copy(
-                    toneAdjustments = if (plan.decisions.isEmpty()) "Original retained" else
-                        if (outcome.maskUsed) "Selective shadow lift with highlight protection" else "Adaptive tone with highlight protection",
+                    toneAdjustments = plan.decisions.mapNotNull { decision -> when(decision.parameter) {
+                        "AdaptiveColorTone" -> "Adaptive tone with highlight protection"
+                        "LocalShadows" -> "Selective subject shadow lift"
+                        "Shadows" -> "Global shadow lift"
+                        else -> null
+                    } }.joinToString(", ").ifEmpty { "Source tone retained" },
                     colorAdjustments = if (outcome.modelStrength > 0f)
                         "Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection"
                         else "Source colors retained"

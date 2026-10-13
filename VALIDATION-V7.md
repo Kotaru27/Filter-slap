@@ -17,9 +17,13 @@ Private user photos and private audit outputs are excluded from the repository. 
 
 ## Android instrumentation
 
-`OfflineRuntimeTest` exercises the actual Android ONNX library, Bitmap decode/render, same-recipe export, the application's gallery-save function, and reopening the saved JPEG. It requires a private input copied into the debug target's `files/audit.jpg`. A local software-emulator execution is recorded separately from physical-device tests.
+`OfflineRuntimeTest` is intended to exercise the actual Android ONNX library, Bitmap decode/render, same-recipe export, the application's gallery-save function, and reopening the saved JPEG. Copy a private input to `app/src/androidTest/assets/private-audit.jpg` before building the local test APK. That asset is ignored by Git and is not part of the delivered application APK.
 
-This document is updated with the instrumentation result before delivery. No emulator result should be interpreted as proof of latency, memory or visual quality on the user's phone.
+The local software emulator installed the x86_64 application and test APK. The instrumentation run did not finish within its 300-second timeout. Earlier attempts also encountered transient emulator package-service/data-directory errors. **Native Android model/edit/save/reopen and UI behavior remain unverified.** The timeout is not proof of a phone-side failure or success. Do not describe this artifact as physically device-tested.
+
+The independently pushed GitHub Actions build for `b4476c998bd9b187b43d0f0395ac30c032a3f6a7` completed successfully, including model preparation, the full unit-test gate, ARM64 APK assembly, signature verification and 16 KB ZIP alignment. The private-photo tests run locally and are skipped in CI when their input environment is absent.
+
+The delivered ARM64 APK is rebuilt from the final pushed revision. All three ARM64 native libraries were additionally inspected for ELF `PT_LOAD` alignment; each segment is aligned to 16,384 bytes. The original universal artifact was approximately 165 MB; the ARM64 variant is approximately 63 MB and preserves the same source and bundled models.
 
 ## Remaining release qualification
 

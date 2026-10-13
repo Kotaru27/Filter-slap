@@ -16,9 +16,8 @@ import java.io.File
 class OfflineRuntimeTest {
     @Test fun bundled_models_render_and_save_with_the_same_recipe() = runBlocking {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
-        val input=File(context.filesDir,"audit.jpg")
-        assertTrue("Push a private test photo into the debug app's files/audit.jpg",input.isFile)
-        val source=BitmapFactory.decodeFile(input.absolutePath)!!
+        val testContext=InstrumentationRegistry.getInstrumentation().context
+        val source=testContext.assets.open("private-audit.jpg").use { BitmapFactory.decodeStream(it) }!!
         val analysis=ImageAnalyzer.analyze(source)
         val result=OfflineEnhancer.process(context,source,analysis)
         assertTrue(result.outcome!!.damage.safe)
@@ -30,10 +29,10 @@ class OfflineRuntimeTest {
         assertNotNull("App gallery save failed",uri)
         val reopened=context.contentResolver.openInputStream(uri!!).use { BitmapFactory.decodeStream(it) }!!
         assertEquals(source.width,reopened.width);assertEquals(source.height,reopened.height)
-        File(context.filesDir,"audit-output.jpg").outputStream().use {
+        File(testContext.filesDir,"audit-output.jpg").outputStream().use {
             exported.bitmap.compress(Bitmap.CompressFormat.JPEG,95,it)
         }
-        File(context.filesDir,"audit-result.txt").writeText("Outcome: ${result.outcome}\nPlan: ${result.appliedPlan}\nSaved: $uri\n")
+        File(testContext.filesDir,"audit-result.txt").writeText("Outcome: ${result.outcome}\nPlan: ${result.appliedPlan}\nSaved: $uri\n")
         reopened.recycle();exported.bitmap.recycle();result.bitmap.recycle();source.recycle()
     }
 }
