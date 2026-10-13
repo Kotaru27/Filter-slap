@@ -25,12 +25,7 @@ jobs:
           packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
       - name: Prepare Gradle wrapper
         run: chmod +x gradlew
-      - name: Run image-engine tests (failures are NOT ignored)
-        id: unit_tests
-        # Build a separately labeled candidate even if tests fail, so a failed
-        # test does not conceal whether Android compilation works. Final job
-        # remains FAILED until tests pass; APK must not be described as verified.
-        continue-on-error: true
+      - name: Run image-engine tests (required; failures block APK)
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -54,8 +49,3 @@ jobs:
           name: FilterSlap-V5-debug-CANDIDATE-not-device-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      - name: Fail release gate if engine tests did not pass
-        if: steps.unit_tests.outcome != 'success'
-        run: |
-          echo 'FAIL: unit tests did not pass. APK is an unverified candidate, not a release.'
-          exit 1

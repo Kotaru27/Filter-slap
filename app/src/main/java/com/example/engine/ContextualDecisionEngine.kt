@@ -250,7 +250,7 @@ object ContextualDecisionEngine {
         // a healthy tonal spread must not have their blacks deepened to manufacture "depth".
         val structureHeadroom = (sq.edgeStrength / 50f).coerceIn(0.5f, 1f)
         if (!alreadyGood && !isIntentionalDark && !isIntentionalBright && !flatLowContrast &&
-            t.iqr in 0.16f..0.20f && t.occupancy > 0.25f && sq.noiseConfidence < 18f) {
+            t.iqr in 0.16f..0.20f && t.occupancy > 0.15f && sq.noiseConfidence < 18f) {
             val evidence = ((0.20f - t.iqr) / 0.04f).coerceIn(0f, 1f)
             val ceiling = when (profile) {
                 GradingProfile.LANDSCAPE -> 0.10f

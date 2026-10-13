@@ -22,3 +22,7 @@ Base commit: `5c618f19c4cfb40882d92712710178e039da0cde` (V4, 199 passing Android
 - APK compilation, signing, and native-library alignment checks pass.
 - The editing application installs, renders, compares, and saves photographs correctly on Android devices.
 - An independent set of varied photos shows no systematic desaturation or contrast degradation and no new artifacts.
+
+## First V5 CI attempt — failed, investigated
+
+GitHub Actions run `38427113776` compiled/signed an APK but failed 1 of 203 tests: the near-flat contrast "dead zone" scenario used `iqr=0.165`, `occupancy=0.165`. A newly introduced `occupancy >0.25` gate had incorrectly suppressed a justified modest contrast correction. Corrected the gate to `>0.15`, preserving the existing test as an independent constraint. Changed CI to **stop at failing tests**, instead of rendering a `continue-on-error` test step as successful and failing at a separate terminal gate. No unverified first-run APK is being distributed. Re-run pending.
