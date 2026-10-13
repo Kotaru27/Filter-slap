@@ -1,6 +1,4 @@
-## V6 model research (not yet an Android upgrade)
-
-The **V5 Android app remains unchanged**. A separate [V6 benchmark/inference track](research/v6/README.md) evaluates a pinned pretrained Image-Adaptive 3D LUT against real V5 outputs using lawful held-out photographs and blinded reviews. [Current status](V6-IMPLEMENTATION-STATUS.md). **No model is yet integrated into the APK; no photographic-quality win is claimed.**
+**V6 Android learned-model candidate:** [Implementation](README-V6.md) · [Verification](VALIDATION-V6.md). Source includes on-device offline ONNX inference and V5 fallback; real-photo superiority is not established.
 
 > **V4 engineering update — NOT AN APK RELEASE.** Read [VALIDATION-V4.md](VALIDATION-V4.md) before attempting to build.
 

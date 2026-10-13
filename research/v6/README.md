@@ -83,3 +83,7 @@ python research/v6/benchmark.py score --key /private/secret-v5-v6.json --votes /
 ## Scope and non-regression
 
 The existing V5 `app/` source and build configuration remain untouched in this research milestone. No learned algorithm is silently enabled on phones. If blind comparative evidence is negative or inconclusive, V5 stays as baseline and we reject/refine the candidate rather than force a version update.
+
+## V6 Android deployment prototype
+
+The `export_android_model.py` script exports the pinned paired sRGB classifier to ONNX and the basis LUTs to a little-endian array, verifies three actual ONNX/PyTorch inference parity probes, and writes per-asset SHA-256 checksums. GitHub Actions does this before `testDebugUnitTest` and `assembleDebug`. The Android app contains the model and runs fully offline using ONNX Runtime 1.30.0. An image-independent output screening gate can fall back to the preserved V5 processing pipeline. **This is not a demonstration of image aesthetic superiority; blind photo tests are still outstanding.**

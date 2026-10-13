@@ -143,7 +143,7 @@ fun FilterSlapApp() {
                 val frameAnalysis = if (crop.aspectRatio == null) analysis
                 else ImageAnalyzer.analyze(cropped)
 
-                val render = com.example.engine.ImageProcessor.process(cropped, frameAnalysis)
+                val render = com.example.engine.v6.V6AdaptiveEditor.process(context, cropped, frameAnalysis)
                 // Pixel processing is synchronous: cancellation may be requested while
                 // inside it. Never publish the obsolete bitmap after a discard/new pick.
                 if (!isActive) {
@@ -162,11 +162,11 @@ fun FilterSlapApp() {
                     "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
                 }
                 val enrichedAnalysis = frameAnalysis.copy(report = frameAnalysis.report.copy(
-                    toneAdjustments = appliedPlan.decisions
+                    toneAdjustments = if (appliedPlan.profileName == "V6_LEARNED") "Image-adaptive global tone applied; not a measured quality improvement" else appliedPlan.decisions
                         .filter { it.parameter in listOf("Exposure", "Contrast", "Shadows", "Highlights", "Blacks", "Whites", "Dehaze", "Vignette", "CA") }
                         .joinToString(", ") { dec -> toneProse(dec.parameter, dec.magnitude) }
                         .ifEmpty { "Tone already balanced — no corrective curve applied" },
-                    colorAdjustments = appliedPlan.decisions
+                    colorAdjustments = if (appliedPlan.profileName == "V6_LEARNED") "Pretrained sRGB color transform (72% blend), screened for damage" else appliedPlan.decisions
                         .filter { it.parameter in listOf("WhiteBalance", "WhiteBalanceTint", "Saturation", "Vibrance", "SplitToneShadows", "SplitToneHighlights", "SkyHue", "VegHue") }
                         .joinToString(", ") { dec -> colorProse(dec.parameter, dec.magnitude) }
                         .ifEmpty { "Color kept natural — no cast or saturation correction needed" }
@@ -289,7 +289,7 @@ fun FilterSlapApp() {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
                         val fullAnalysis = ImageAnalyzer.analyze(cropped)
-                        val exportRender = com.example.engine.ImageProcessor.process(cropped, fullAnalysis)
+                        val exportRender = com.example.engine.v6.V6AdaptiveEditor.process(context, cropped, fullAnalysis)
                         val rendered = exportRender.bitmap
                         saveProfile = exportRender.appliedPlan.profileName
                         try {

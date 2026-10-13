@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.filterslap.qwezx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 2
-    versionName = "1.1.0-beta"
+    versionCode = 3
+    versionName = "1.2.0-v6-beta"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -56,6 +56,7 @@ android {
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
+  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.30.0")
   implementation("org.boofcv:boofcv-android:0.43.1")
   implementation("org.boofcv:boofcv-core:0.43.1")
 
