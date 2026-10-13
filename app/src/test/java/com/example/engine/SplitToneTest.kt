@@ -53,18 +53,12 @@ class SplitToneTest {
     }
 
     @Test
-    fun `landscape profile emits both split-tone decisions, bounded`() {
+    fun `scene category alone cannot authorize aesthetic split-tone`() {
         val analysis = ImageAnalyzer.analyze(landscapeLikeScene())
         val plan = ContextualDecisionEngine.evaluate(analysis)
         assertEquals("LANDSCAPE", plan.profileName)
-
-        val sh = plan.decisions.find { it.parameter == "SplitToneShadows" }
-        assertNotNull("LANDSCAPE must grade shadows", sh)
-        assertTrue("shadow grade bounded (<=0.04); got ${sh!!.magnitude}", sh.magnitude in 0f..0.04f)
-
-        val hi = plan.decisions.find { it.parameter == "SplitToneHighlights" }
-        assertNotNull("LANDSCAPE must grade highlights", hi)
-        assertTrue("highlight grade bounded (<=0.04); got ${hi!!.magnitude}", hi.magnitude in 0f..0.04f)
+        assertNull("No confirmed color defect calls for artistic split-tone",
+            plan.decisions.find { it.parameter.startsWith("SplitTone") })
     }
 
     @Test

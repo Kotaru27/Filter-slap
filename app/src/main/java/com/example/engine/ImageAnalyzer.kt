@@ -1002,7 +1002,7 @@ object ImageAnalyzer {
             if (tiltDeg > 90.0) tiltDeg -= 180.0
             if (tiltDeg < -90.0) tiltDeg += 180.0
             if (abs(tiltDeg) > 1.0 && abs(tiltDeg) < 30.0) {
-                "Horizon appears tilted ${"%.1f".format(abs(tiltDeg))}° ${if (tiltDeg > 0) "CW" else "CCW"}"
+                "Upper-frame edge direction ≈ ${"%.1f".format(abs(tiltDeg))}° ${if (tiltDeg > 0) "CW" else "CCW"}; not a confirmed horizon"
             } else null
         } else null
 

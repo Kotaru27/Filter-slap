@@ -45,13 +45,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: failed-unit-test-reports
+          name: unit-test-reports
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V4-debug-CANDIDATE-not-device-tested
+          name: FilterSlap-V5-debug-CANDIDATE-not-device-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Fail release gate if engine tests did not pass

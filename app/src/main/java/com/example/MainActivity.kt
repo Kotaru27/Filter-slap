@@ -704,6 +704,9 @@ private fun AnalysisSheet(
                 Spacer(Modifier.height(10.dp))
                 Text(p.profileReason, fontSize = 13.sp, color = Accent, lineHeight = 18.sp)
             }
+            Spacer(Modifier.height(8.dp))
+            Text("Reported percentages are requested edit strengths, not measured percentages of defects removed.",
+                fontSize = 12.sp, color = TextSecondary, lineHeight = 17.sp)
             Spacer(Modifier.height(20.dp))
 
             ReportSection("SCENE") {
@@ -711,7 +714,7 @@ private fun AnalysisSheet(
                 ReportRow("Subject", analysis.report.primarySubject)
                 ReportRow("Composition", analysis.report.composition)
                 analysis.report.perspectiveCorrection?.let {
-                    ReportRow("Perspective", it, valueTint = DangerRed)
+                    ReportRow("Edge orientation (estimate)", it)
                 }
             }
             ReportSection("LIGHT & TONE") {
@@ -837,7 +840,7 @@ private fun toneProse(parameter: String, magnitude: Float): String = when (param
     "Whites" -> "Whites stretched ${percent(magnitude)} toward true white point"
     "Dehaze" -> "Haze lifted ${percent(magnitude)}"
     "Vignette" -> "Corner darkening corrected ${percent(magnitude)}"
-    "CA" -> "Color fringing suppressed ${percent(magnitude)}"
+    "CA" -> "Localized chroma-fringe correction (strength ${percent(magnitude)}; not measured removal)"
     else -> parameter
 }
 

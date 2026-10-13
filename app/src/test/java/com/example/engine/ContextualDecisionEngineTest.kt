@@ -110,10 +110,9 @@ class ContextualDecisionEngineTest {
     }
 
     @Test
-    fun `healthy photograph gets controlled enhancement but no corrective edits`() {
-        // Moderate contrast, no cast, no crushed/blown regions, no muted color, no haze,
-        // subject region healthy: AUTO gives a tasteful enhancement baseline (contrast, clarity,
-        // vibrance) but NO defect-like corrections (exposure, shadows, highlights, cast fix).
+    fun `healthy photograph has no unsupported tonal or color styling`() {
+        // Moderate contrast, no cast, no crushed/blown regions, no muted color, no haze.
+        // Existing scene statistics do not justify black-point crush or cinematic grading.
         val analysis = buildAnalysis(
             pixelCount = 10000,
             isDarkImage = false, isBrightImage = false,
@@ -134,8 +133,10 @@ class ContextualDecisionEngineTest {
             it.parameter in listOf("Exposure", "Shadows", "Highlights", "WhiteBalance")
         }
         assertTrue("Healthy photo should have no corrective edits", corrective.isEmpty())
-        val enhancement = plan.decisions.filter { it.parameter in listOf("Contrast", "Clarity", "Vibrance") }
-        assertTrue("Healthy photo should receive the AUTO enhancement baseline", enhancement.isNotEmpty())
+        val unsupported = plan.decisions.filter { it.parameter in listOf("Contrast", "Blacks",
+            "SplitToneShadows", "SplitToneHighlights") || it.regionMask == "Background" }
+        assertTrue("Healthy tones must not be styled on general-scene detection alone: $unsupported",
+            unsupported.isEmpty())
     }
 
     @Test

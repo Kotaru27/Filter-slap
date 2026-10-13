@@ -55,7 +55,7 @@ object ContextualDecisionEngine {
             landscape -> GradingProfile.LANDSCAPE to
                 "Landscape (sky ${(analysis.skyScore).toInt()}%, foliage ${(analysis.greenScore).toInt()}%) — depth-first grading: tonal depth, sky protection, structured detail"
             else -> GradingProfile.GENERAL to
-                "General scene — defect-first correction with a restrained enhancement baseline"
+                "General scene — defect-first corrections; no automatic cinematic styling"
         }
 
         // Highlight-compromised frame: any local-contrast amplification (Clarity/Texture)
@@ -69,11 +69,9 @@ object ContextualDecisionEngine {
         val isIntentionalDark = t.p95 < 0.6f && sq.shadowCrushing < 0.1f && analysis.isDarkImage
         val isIntentionalBright = t.p05 > 0.4f && sq.highlightClipping < 0.1f && analysis.isBrightImage
 
-        // The engine first corrects photographic DEFECTS (bad exposure, cast, crushed/blown
-        // recoverable detail, drab/blocked regions), then applies a controlled AUTO enhancement
-        // baseline. A good photograph is not distorted — it is given a tasteful lift in tonal
-        // depth, local structure and color life. Enhancement never fights intentional low-key or
-        // high-key intent, and never manufactures a color shift.
+        // Only apply corrections that have measurable evidence. A scene profile is NOT
+        // permission to darken shadows, desaturate backgrounds, or impose a cinematic look.
+        // Such baseline styling repeatedly changed technically balanced images.
 
         // ---- Declared defects (region-relative where meaningful) ----
         // White-balance cast evidence: prefer measured NEUTRAL ANCHORS (smooth, near-neutral
@@ -125,7 +123,8 @@ object ContextualDecisionEngine {
         val subjectRegionBlown = !isIntentionalBright && !globalBright && rd.subjectBlown > 0.4f && t.p50 > 0.4f
 
         // ---- True-black / true-white stretch, only when real endpoints exist to recover ----
-        if (!isIntentionalDark && t.occupancy > 0.15f && t.blackPoint > 0.03f && sq.shadowCrushing < 0.35f) {
+        if (!isIntentionalDark && t.iqr < 0.20f && t.occupancy > 0.15f &&
+            t.blackPoint > 0.03f && sq.shadowCrushing < 0.08f) {
             val blackMag = (t.blackPoint * 0.5f).coerceIn(0.03f, 0.12f)
             if (blackMag > 0.03f) {
                 decisions.add(EditDecision("Blacks", "Global", "Low", blackMag, 0.7f, 0.6f, 0.2f))
@@ -240,35 +239,29 @@ object ContextualDecisionEngine {
         // The KIND of lift is scene-specific (a portrait is not graded like a
         // landscape); magnitudes are committed, with the renderer's harm/color
         // gates as the only safety net (no double throttling here).
-        // SKIP if the photo is already well-exposed, healthy and vivid —
-        // don't fix what isn't broken.
+        // SKIP unnecessary changes to an already good exposure or palette.
         // ===================================================================
 
         val alreadyGood = t.iqr > 0.35f && ca.avgS > 0.2f &&
             sq.noiseConfidence < 10f && sq.edgeStrength > 15f &&
             t.p50 in 0.35f..0.65f && sq.shadowCrushing < 0.03f && sq.highlightClipping < 0.03f
 
-        // F13: aligned with the corrective path's 0.16 threshold — below it the CORRECTIVE
-        // contrast owns the edit; [0.16, 0.62] belongs to the enhancement baseline. The old
-        // 0.18 gate left a dead zone where neither path fired.
-        val contrastLooksFlat = t.iqr < 0.16f
+        // Small near-flat contrast recovery, NOT a mandatory grading baseline. Scenes with
+        // a healthy tonal spread must not have their blacks deepened to manufacture "depth".
         val structureHeadroom = (sq.edgeStrength / 50f).coerceIn(0.5f, 1f)
-
-        if (!alreadyGood && !isIntentionalDark && !isIntentionalBright && !contrastLooksFlat && t.iqr <= 0.62f) {
-            val deficiency = (0.16f - min(t.iqr, 0.16f)).coerceIn(0f, 0.16f)
-            val contrastMag = when (profile) {
-                // Landscape: depth is THE look — commit to a real S-curve (cap raised).
-                GradingProfile.LANDSCAPE -> ((((0.20f + deficiency * 0.7f) * structureHeadroom) *
-                    if (alreadyGood) 0.75f else 1f)).coerceIn(0.08f, 0.35f)
-                // Portrait: gentle — skin lives in the midtones; never crush a face.
-                GradingProfile.PORTRAIT -> ((((0.10f + deficiency * 0.5f) * structureHeadroom) *
-                    if (alreadyGood) 0.75f else 1f)).coerceIn(0.05f, 0.16f)
-                // Low light: contrast amplifies noise — keep it minimal.
-                GradingProfile.LOW_LIGHT -> (((0.08f + deficiency * 0.4f) * structureHeadroom)).coerceIn(0.04f, 0.12f)
-                else -> ((((0.14f + deficiency * 0.6f) * structureHeadroom) *
-                    if (alreadyGood) 0.75f else 1f)).coerceIn(0.06f, 0.25f)
+        if (!alreadyGood && !isIntentionalDark && !isIntentionalBright && !flatLowContrast &&
+            t.iqr in 0.16f..0.20f && t.occupancy > 0.25f && sq.noiseConfidence < 18f) {
+            val evidence = ((0.20f - t.iqr) / 0.04f).coerceIn(0f, 1f)
+            val ceiling = when (profile) {
+                GradingProfile.LANDSCAPE -> 0.10f
+                GradingProfile.PORTRAIT -> 0.06f
+                GradingProfile.LOW_LIGHT -> 0.035f
+                else -> 0.08f
             }
-            decisions.add(EditDecision("Contrast", "Global", "Mid", contrastMag, 0.75f, 0.65f, 0.2f))
+            val contrastMag = ceiling * evidence * structureHeadroom
+            if (contrastMag > 0.012f) {
+                decisions.add(EditDecision("Contrast", "Global", "Mid", contrastMag, 0.65f, 0.55f, 0.2f))
+            }
         }
 
         // Local structure: Clarity — WHO gets it is profile-specific.
@@ -315,15 +308,16 @@ object ContextualDecisionEngine {
             decisions.add(EditDecision("Clarity", "Metal", "Mid", metalMag, 0.7f, 0.6f, 0.2f))
         }
 
-        // ---- Lens corrections: render what we measure ----
+        // ---- Lens corrections: measurement invites local pixel inspection, never blind correction ----
         // Vignette: a measured corner darkening is a lens defect — correct it with a radial
         // gain (renderer), scaled by severity. Never fired on a clean lens.
         if (analysis.lensQuality.vignette > 0.15f) {
             decisions.add(EditDecision("Vignette", "Global", "All",
                 (analysis.lensQuality.vignette * 0.7f).coerceIn(0.08f, 0.5f), 0.8f, 0.6f, 0.15f))
         }
-        // Chromatic aberration: measurable color fringing at strong edges — suppress it
-        // (renderer smooths R/B toward luma at edges, magnitude from severity).
+        // The global score is a *suspected* lateral CA signature, not proof.
+        // The renderer rejects genuine color boundaries and only corrects narrow chroma
+        // outliers with consistent colors on both sides of a strong luma edge.
         if (analysis.lensQuality.chromaticAberration > 0.2f) {
             decisions.add(EditDecision("CA", "Global", "High",
                 (analysis.lensQuality.chromaticAberration * 0.8f).coerceIn(0.15f, 0.7f), 0.8f, 0.6f, 0.1f))
@@ -341,52 +335,11 @@ object ContextualDecisionEngine {
             decisions.add(EditDecision("Vibrance", "Global", "All", vibMag, 0.65f, 0.5f, 0.2f))
         }
 
-        // P2 BACKGROUND DE-EMPHASIS — the missing half of visual hierarchy. Subject-boost
-        // alone doesn't create hierarchy; a senior editor also lets the background RECEDE a
-        // touch. Only when a real subject exists (mask coverage gate), the profile calls for
-        // subject separation (Portrait/General), and the sky is not dominant (never dim a
-        // landscape's sky): negative contrast + vibrance on the background mask, bounded so
-        // the recession is felt, not seen. LOW_LIGHT/LANDSCAPE profiles skip it — separation
-        // is a subject-first concept.
-        // NOTE: deliberately NOT gated on isIntentionalDark — a low-key frame with a subject
-        // is exactly when separation matters (bright subject, dark field); the intent rule
-        // protects against GLOBAL lifts, not relative recession.
-        if (!alreadyGood && (profile == GradingProfile.PORTRAIT || profile == GradingProfile.GENERAL)) {
-            val subjectCoverage = if (analysis.subjectMask.isNotEmpty())
-                analysis.subjectMask.sum() / analysis.pixelCount else 0f
-            val bgHasSubject = subjectCoverage in 0.04f..0.60f
-            val skyNotDominant = analysis.skyScore < 20f
-            if (bgHasSubject && skyNotDominant) {
-                // Deeper recession when the background is busy/high-contrast (more to quiet),
-                // gentler when the frame is already calm.
-                val bgContrastMag = (0.05f + 0.03f * (1f - t.iqr.coerceIn(0f, 1f)))
-                    .coerceIn(0.04f, 0.08f)
-                decisions.add(EditDecision("Contrast", "Background", "Mid", -bgContrastMag, 0.55f, 0.5f, 0.2f))
-                decisions.add(EditDecision("Vibrance", "Background", "All", -0.04f, 0.5f, 0.45f, 0.2f))
-            }
-        }
-
-        // P3 SPLIT-TONE (profile-driven zone color grading) — the classic print look: cool
-        // shadows, warm highlights. The decision carries the magnitude; the renderer applies
-        // a bounded OKLab chroma offset to the shadow/highlight zones per pixel. Magnitudes
-        // are capped at 0.04 — split-toning fails the moment it becomes visible as color.
-        // LANDSCAPE: the full complementary pair (depth is the landscape look). GENERAL: a
-        // whisper of warmth in the highlights only. PORTRAIT: none (skin truth first).
-        // LOW_LIGHT: none (any chroma offset amplifies noise perception in dark zones).
-        // Suppressed on intentional low-key/high-key frames — those images are statements,
-        // not candidates for grading.
-        if (!alreadyGood && !isIntentionalDark && !isIntentionalBright) {
-            when (profile) {
-                GradingProfile.LANDSCAPE -> {
-                    decisions.add(EditDecision("SplitToneShadows", "Shadows", "All", 0.04f, 0.5f, 0.4f, 0.2f))
-                    decisions.add(EditDecision("SplitToneHighlights", "Highlights", "All", 0.04f, 0.5f, 0.4f, 0.2f))
-                }
-                GradingProfile.GENERAL -> {
-                    decisions.add(EditDecision("SplitToneHighlights", "Highlights", "All", 0.02f, 0.45f, 0.35f, 0.2f))
-                }
-                else -> { /* PORTRAIT / LOW_LIGHT: no split-tone */ }
-            }
-        }
+        // Do not automatically reduce background saturation or add split-tone styling.
+        // The subject mask is focus/saliency-based, not a verified semantic segmentation;
+        // applying these decorative choices without a demonstrated defect repeatedly
+        // damaged legitimate colors. The rendering passes remain available to a future
+        // separately validated, confidence-gated decision policy.
 
         // P4 HUE-BAND REFINEMENT — measured hue repair for the sky and foliage bands.
         // "Detection is never permission": the band must be MEASURED (real weight), COHERENT

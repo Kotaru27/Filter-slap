@@ -108,13 +108,16 @@ class GradingProfileTest {
     }
 
     @Test
-    fun `landscape contrast is committed deeper than portrait`() {
+    fun `scene category alone does not force contrast or stylized colors`() {
         val portraitPlan = ContextualDecisionEngine.evaluate(ImageAnalyzer.analyze(portraitLikeScene()))
         val landscapePlan = ContextualDecisionEngine.evaluate(ImageAnalyzer.analyze(landscapeLikeScene()))
-
-        val pc = portraitPlan.decisions.find { it.parameter == "Contrast" }?.magnitude ?: 0f
-        val lc = landscapePlan.decisions.find { it.parameter == "Contrast" }?.magnitude ?: 0f
-        assertTrue("landscape contrast ($lc) should exceed portrait contrast ($pc)", lc > pc)
+        for (plan in listOf(portraitPlan, landscapePlan)) {
+            assertTrue("Auto must not synthesize a stylistic split-tone regardless of profile",
+                plan.decisions.none { it.parameter.startsWith("SplitTone") })
+            assertTrue("Contrast must be restrained and tied to measured contrast deficiency",
+                plan.decisions.filter { it.parameter == "Contrast" && it.regionMask == "Global" }
+                    .all { it.magnitude <= 0.18f })
+        }
     }
 
     @Test

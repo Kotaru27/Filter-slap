@@ -87,7 +87,7 @@ object ImageProcessor {
         pixels: IntArray, width: Int, height: Int,
         analysis: AnalysisResult, plan: EditPlan,
         hasDetailEdits: Boolean, midFreq: FloatArray, highFreq: FloatArray
-    ) {
+    ): Int {
         val aw = analysis.analysisWidth
         val ah = analysis.analysisHeight
         val scaleX = aw.toFloat() / width
@@ -117,8 +117,10 @@ object ImageProcessor {
             val ny = (2f * j / max(1, height - 1)) - 1f
             ny * ny
         } else null
-        // CA correction is computed in the pixel loop. Do not allocate a full-frame
-        // float array (64 MB at 16 megapixels) for a value only used once.
+        // Correct only pixel-level CHROMATIC OUTLIERS supported by neutral/consistent
+        // colors on both sides of a strong edge. Never desaturate arbitrary object edges.
+        // Five cached rows preserve source context without copying the whole frame.
+        val caChanged = ChromaticFringeCorrection.correctInPlace(pixels, width, height, caMag)
 
         fun getMaskWeight(region: String, x: Int, y: Int): Float {
             if (region == "Global") return 1f
@@ -258,11 +260,6 @@ object ImageProcessor {
                     }
                 }
 
-                // Chromatic-aberration estimates are uncertain; only gently desaturate
-                // high-confidence, fringe-like edge pixels. No full-frame buffer.
-                val caStrength = if (caMag > 0f && analysis.detailMask[aIdx] > 0.25f)
-                    caMag * analysis.detailMask[aIdx] * 0.5f else 0f
-
                 l = l.coerceIn(0f, 1f)
                 
                 // Saturation and Vibrance are NOT applied here: color is graded in a separate
@@ -275,21 +272,11 @@ object ImageProcessor {
                 var outPixel = if (abs(l - hsl[2]) < 1e-7f && abs(s - hsl[1]) < 1e-7f)
                     c else ColorUtils.HSLToColor(hslOut)
 
-                // CA fringe removal (RGB space): pull R and B toward the pixel's luma at
-                // strong-edge pixels. This desaturates the fringe the lens added without
-                // touching genuine color elsewhere.
-                if (caStrength > 0f) {
-                    val pull = caStrength
-                    val or = Color.red(outPixel); val og = Color.green(outPixel); val ob = Color.blue(outPixel)
-                    val oluma = (or * 0.299f + og * 0.587f + ob * 0.114f)
-                    val nr2 = (or + (oluma - or) * pull).toInt().coerceIn(0, 255)
-                    val nb2 = (ob + (oluma - ob) * pull).toInt().coerceIn(0, 255)
-                    outPixel = Color.rgb(nr2, og, nb2)
-                }
                 pixels[idx] = if (Color.alpha(c) == 255) outPixel else
                     Color.argb(Color.alpha(c), Color.red(outPixel), Color.green(outPixel), Color.blue(outPixel))
             }
         }
+        return caChanged
     }
 
     private fun evaluateQualityGate(
@@ -986,10 +973,15 @@ object ImageProcessor {
 
         // 4. Final Processing — in-place: pixels is overwritten with processed output.
         // Uses the converged plan AND the re-analyzed masks from effectiveAnalysis.
-        applyPlanToPixels(
+        val caCorrections = applyPlanToPixels(
             pixels, width, height, effectiveAnalysis, plan,
             hasDetailEdits, midFreq, highFreq
         )
+        // A scene-level CA score is not proof that a single removable fringe was found.
+        // Report only genuinely applied CA work, never a claimed percentage of removal.
+        if (caCorrections == 0) {
+            plan = plan.copy(decisions = plan.decisions.filterNot { it.parameter == "CA" })
+        }
 
         // Full preview safety gate and final image use the same post-tonal stages.
         applyColorPipeline(pixels, width, height, plan, effectiveAnalysis)

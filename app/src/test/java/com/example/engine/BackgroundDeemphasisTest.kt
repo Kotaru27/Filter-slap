@@ -12,17 +12,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * P2: BACKGROUND DE-EMPHASIS — the second half of visual hierarchy.
- *
- * Invariants:
- * 1. A real subject in a PORTRAIT/GENERAL frame produces NEGATIVE Contrast and Vibrance
- *    decisions scoped to the Background mask (bounded: felt, not seen).
- * 2. No dominant subject (subject coverage < 4%) → no background edits (detection is
- *    never permission).
- * 3. Sky-dominant frames (landscape) never get background de-emphasis.
- * 4. The render actually de-emphasizes: background-region contrast/chroma drops while
- *    the subject region holds — measured through the full pipeline.
- * 5. Fidelity guards still hold (no new clipping/crushing; dimensions preserved).
+ * Regression coverage for conservative treatment of backgrounds. A center/focus-based
+ * subject mask does not establish semantic confidence, so automatic background styling
+ * must abstain. Manually supplied mask rendering remains available for future testing.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -54,21 +46,11 @@ class BackgroundDeemphasisTest {
     }
 
     @Test
-    fun `subject scene produces bounded negative background decisions`() {
+    fun `focus saliency alone never authorizes background desaturation`() {
         val analysis = ImageAnalyzer.analyze(subjectScene())
         val plan = ContextualDecisionEngine.evaluate(analysis)
-
-        val bgContrast = plan.decisions.find { it.parameter == "Contrast" && it.regionMask == "Background" }
-        assertNotNull("Subject frames must de-emphasize the background (contrast)", bgContrast)
-        assertTrue("Background contrast must be negative (recession); got ${bgContrast!!.magnitude}",
-            bgContrast.magnitude < 0f)
-        assertTrue("Background contrast recession is bounded (>= -0.08); got ${bgContrast.magnitude}",
-            bgContrast.magnitude >= -0.08f)
-
-        val bgVibrance = plan.decisions.find { it.parameter == "Vibrance" && it.regionMask == "Background" }
-        assertNotNull("Subject frames must de-emphasize the background (vibrance)", bgVibrance)
-        assertTrue("Background vibrance must be negative; got ${bgVibrance!!.magnitude}",
-            bgVibrance.magnitude < 0f)
+        assertNull("Focus and center priors do not prove a safe background region",
+            plan.decisions.find { it.regionMask == "Background" })
     }
 
     @Test
@@ -96,60 +78,20 @@ class BackgroundDeemphasisTest {
     }
 
     @Test
-    fun `render separates subject from background`() {
+    fun `render does not silently introduce background styling`() {
         val bitmap = subjectScene()
         val analysis = ImageAnalyzer.analyze(bitmap)
         val render = ImageProcessor.process(bitmap, analysis)
-        // Control: identical render with ONLY the Background decisions removed. The delta
-        // between render and control IS the masked de-emphasis — isolated from every global
-        // edit the plan also applies. (An in/out comparison would conflate global tonal
-        // shifts with the separation effect.)
-        val controlPlan = EditPlan(
-            render.appliedPlan.decisions.filter { it.regionMask != "Background" },
-            render.appliedPlan.profileName, render.appliedPlan.profileReason
-        )
-        // Re-render the control in-process: same pipeline, decisions minus the Background ones.
-        val controlRender = renderWithPlan(bitmap, analysis, controlPlan)
-        val out = render.bitmap
-        val ctl = controlRender
-        assertEquals(bitmap.width, out.width)
-        assertEquals(bitmap.height, out.height)
-
-        fun localContrast(bmp: Bitmap, x0: Int, y0: Int, size: Int): Double {
-            var acc = 0.0; var cnt = 0
-            for (y in y0 until y0 + size) for (x in x0 until x0 + size) {
-                if (x + 1 < x0 + size) {
-                    val a = bmp.getPixel(x, y); val b = bmp.getPixel(x + 1, y)
-                    val la = (Color.red(a) + Color.green(a) + Color.blue(a)) / 3.0
-                    val lb = (Color.red(b) + Color.green(b) + Color.blue(b)) / 3.0
-                    acc += kotlin.math.abs(la - lb); cnt++
-                }
-            }
-            return acc / cnt
-        }
-
-        // Background band (left margin strip) and subject band (center checkerboard):
-        // the mask's OWN effect must reduce background contrast and leave the subject band.
-        val bgWithMask = localContrast(out, 8, 60, 24)
-        val bgNoMask = localContrast(ctl, 8, 60, 24)
-        assertTrue(
-            "Background band must be calmer with the mask effect (with=$bgWithMask without=$bgNoMask)",
-            bgWithMask <= bgNoMask
-        )
-        val subjWithMask = localContrast(out, 64, 64, 32)
-        val subjNoMask = localContrast(ctl, 64, 64, 32)
-        assertTrue(
-            "Subject band must hold its contrast (with=$subjWithMask without=$subjNoMask)",
-            subjWithMask >= subjNoMask * 0.95
-        )
-
-        if (bitmap !== out) bitmap.recycle()
-        out.recycle()
-        ctl.recycle()
+        assertEquals(bitmap.width, render.bitmap.width)
+        assertEquals(bitmap.height, render.bitmap.height)
+        assertNull("Neither initial nor converged editing may add a background grade",
+            render.appliedPlan.decisions.find { it.regionMask == "Background" })
+        render.bitmap.recycle()
+        bitmap.recycle()
     }
 
     @Test
-    fun `fidelity guards hold under background de-emphasis`() {
+    fun `fidelity guards hold without automatic background de-emphasis`() {
         val bitmap = subjectScene()
         val analysis = ImageAnalyzer.analyze(bitmap)
         val render = ImageProcessor.process(bitmap, analysis)
