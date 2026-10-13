@@ -25,6 +25,8 @@ The independently pushed GitHub Actions build for `b4476c998bd9b187b43d0f0395ac3
 
 The delivered ARM64 APK is rebuilt from the final pushed revision. All three ARM64 native libraries were additionally inspected for ELF `PT_LOAD` alignment; each segment is aligned to 16,384 bytes. The original universal artifact was approximately 165 MB; the ARM64 variant is approximately 63 MB and preserves the same source and bundled models.
 
+The final packaging audit removes transitive debug-tooling `INTERNET` and `ACCESS_NETWORK_STATE` permissions with manifest-merger removal rules. The produced APK permissions are checked directly; source-manifest inspection alone is insufficient.
+
 ## Remaining release qualification
 
 - Installation, photo picker, repeated crop/compare/save interactions and memory/latency measurements on physical phones, including the intended Android 16 device and appropriate minSdk/16 KB configurations.
