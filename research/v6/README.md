@@ -12,8 +12,10 @@ V5 remains the running Android photo editor. These Python scripts run on a compu
 - Expected `classifier.pth` Git blob SHA-1: `439f2ada316f45d1d28dd86a161790aa3b4e334b`.
 - Architecture: upstream paired `Classifier`, three pretrained 33³ RGB LUTs, content-dependent classifier coefficients. `adaptive_lut.py` uses Python/NumPy trilinear interpolation rather than the upstream native CUDA extension.
 - Torch interpolation for classifier inputs matches upstream, **except** very large images (>5 MP) are thumbnail-downsampled to a max 2048 px first for CPU memory; this approximation must be parity-tested before adoption. For typical input sizes the full source tensor is given to the upstream-style 256×256 interpolation layer.
+- Embedded ICC color profiles are converted to sRGB before inference and scoring; unprofiled images are assumed sRGB; invalid ICC profiles fail closed.
 - Outputs are clipped to sRGB on export and the **pre-clip fraction** is reported. No global LUT can intelligently distinguish same-RGB pixels in different spatial regions; a subject-aware rendering component remains an independent future decision.
 - Training dataset lineage, pretrained-weight permissions, and redistribution requirements require separate review before shipping the weights in a commercial app; a source-code license is not a blanket license for all photographs or third-party training data.
+- The weight downloader verifies both Git blob SHA-1 and SHA-256 (recorded from the first verified GitHub Actions run).
 - Model weights are downloaded into ignored local `model_weights/`; **not** included in the APK or Git history.
 
 ## Quick start (offline local photos; network used only for weight download)

@@ -3,10 +3,10 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageCms
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from adaptive_lut import identity_lut,interpolate_lut
+from adaptive_lut import identity_lut,interpolate_lut,to_srgb
 from benchmark import stats
 
 
@@ -44,6 +44,17 @@ class LUTMath(unittest.TestCase):
         np.testing.assert_allclose(out,np.ones((1,1,3))*1.5,atol=1.e-6)
     def test_reject_nan(self):
         with self.assertRaises(ValueError):interpolate_lut(np.full((1,1,3),np.nan,dtype=np.float32),identity_lut())
+    def test_embedded_srgb_icc_roundtrip(self):
+        im=Image.new("RGB",(4,5),(30,120,180))
+        profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
+        im.info["icc_profile"]=profile.tobytes()
+        converted=to_srgb(im)
+        self.assertEqual(converted.size,im.size)
+        np.testing.assert_allclose(np.asarray(converted),np.asarray(im),atol=2)
+    def test_bad_icc_fails_closed(self):
+        im=Image.new("RGB",(4,5),(30,120,180))
+        im.info["icc_profile"]=b"not-a-valid-icc"
+        with self.assertRaises(ValueError):to_srgb(im)
     def test_size_mismatch_metrics(self):
         with self.assertRaises(ValueError):stats(Image.new("RGB",(5,7)),Image.new("RGB",(5,8)))
 

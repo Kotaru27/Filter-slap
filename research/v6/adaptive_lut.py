@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import io
 from pathlib import Path
 import time
 from typing import Any
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageCms
 
 
 def _torch():
@@ -55,6 +56,26 @@ def build_classifier():
         def forward(self, x):
             return self.model(x)
     return Classifier()
+
+
+
+def to_srgb(original: Image.Image) -> Image.Image:
+    """Honor embedded ICC profiles before RGB LUT inference.
+
+    Unprofiled inputs are explicitly *assumed* to be sRGB, never guessed
+    to be Display-P3 or a working-space RAW image. Reject invalid ICC
+    rather than silently use wrong RGB primaries.
+    """
+    oriented = ImageOps.exif_transpose(original)
+    icc = oriented.info.get("icc_profile")
+    if not icc:
+        return oriented.convert("RGB")
+    try:
+        source_profile = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+        srgb_profile = ImageCms.createProfile("sRGB")
+        return ImageCms.profileToProfile(oriented, source_profile, srgb_profile, outputMode="RGB")
+    except (OSError, ValueError, TypeError) as exc:
+        raise ValueError("Unreadable embedded ICC profile; cannot safely interpret colors") from exc
 
 
 def sha256(path: Path) -> str:
@@ -150,7 +171,7 @@ class AdaptiveLUT:
     def enhance(self, original: Image.Image) -> Inference:
         torch, _ = _torch()
         t0 = time.monotonic()
-        source = ImageOps.exif_transpose(original).convert("RGB")
+        source = to_srgb(original)
         # The published model resamples the source to 256x256 in its first layer.
         # Feed original dimensions to F.interpolate whenever practical for parity;
         # avoid huge input tensors by downsampling only images > 5 MP first.

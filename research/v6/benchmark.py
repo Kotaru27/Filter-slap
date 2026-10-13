@@ -21,12 +21,12 @@ import secrets
 from typing import NamedTuple
 
 import numpy as np
-from PIL import Image, ImageOps, ImageDraw
+from PIL import Image, ImageDraw
 
 try:
-    from .adaptive_lut import AdaptiveLUT,sha256
+    from .adaptive_lut import AdaptiveLUT,sha256,to_srgb
 except ImportError:
-    from adaptive_lut import AdaptiveLUT,sha256
+    from adaptive_lut import AdaptiveLUT,sha256,to_srgb
 
 FIELDS=("id","category","original","v5","rights","split","group")
 VALID_SPLITS={"test","validation","training"}
@@ -76,7 +76,7 @@ def load_manifest(path: Path, *, require_v5: bool = False, min_test: int=0) -> l
 
 def load_image(path:Path)->Image.Image:
     with Image.open(path) as img:
-        return ImageOps.exif_transpose(img).convert("RGB")
+        return to_srgb(img)
 
 
 def stats(original:Image.Image,enhanced:Image.Image)->dict:

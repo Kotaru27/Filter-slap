@@ -15,6 +15,14 @@ EXPECTED_BLOBS = {
     "LUTs.pth": "0830dceee2256ea5d0965c029945c329fac82a26",
     "classifier.pth": "439f2ada316f45d1d28dd86a161790aa3b4e334b",
 }
+EXPECTED_SHA256 = {
+    "LUTs.pth": "c1bb2bc4b7239c1a7e96159f5923123ba796b1fceb0b8c3132b423ea825b821a",
+    "classifier.pth": "bae9865395625ecae58cfe86147e521093bb1e29e7b2544e02adb238b8035021",
+}
+
+
+def sha256_matches(data: bytes, name: str) -> bool:
+    return hashlib.sha256(data).hexdigest() == EXPECTED_SHA256[name]
 
 
 def git_blob_sha1(data: bytes) -> str:
@@ -27,7 +35,7 @@ def fetch_weights(directory: Path) -> None:
         if len(expected)!=40 or not all(x in '0123456789abcdef' for x in expected):
             raise RuntimeError("Upstream blob pin must be supplied before download")
         path=directory/name
-        if path.exists() and git_blob_sha1(path.read_bytes())==expected:
+        if path.exists() and git_blob_sha1(path.read_bytes())==expected and sha256_matches(path.read_bytes(),name):
             print(f"already verified: {name}")
             continue
         url=f"https://raw.githubusercontent.com/HuiZeng/Image-Adaptive-3DLUT/{UPSTREAM_COMMIT}/pretrained_models/sRGB/{name}"
@@ -35,8 +43,8 @@ def fetch_weights(directory: Path) -> None:
         with urllib.request.urlopen(req, timeout=45) as response:
             data=response.read(4_000_000)
         actual=git_blob_sha1(data)
-        if actual!=expected:
-            raise ValueError(f"SHA-1 mismatch for {name}: {actual} != {expected}")
+        if actual!=expected or not sha256_matches(data,name):
+            raise ValueError(f"Checksum mismatch for {name}: git blob {actual}, sha256 {hashlib.sha256(data).hexdigest()}")
         temp=path.with_suffix(".tmp")
         temp.write_bytes(data)
         temp.replace(path)
