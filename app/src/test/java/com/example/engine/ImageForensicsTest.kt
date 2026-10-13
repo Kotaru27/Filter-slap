@@ -26,6 +26,37 @@ class ImageForensicsTest {
         return bitmap
     }
 
+    /**
+     * Repeated spatially balanced material colors give the analyzer multiple independent
+     * chromatic signatures without creating left/right or top/bottom lighting disagreement.
+     *
+     * This is ONLY test input. No special RGB values, materials, image sizes or locations
+     * appear in the production decision engine. The uniform-color ambiguity is protected
+     * by ChromaticAmbiguityTest; these cases test the other side of that trade-off.
+     */
+    private fun createChromaticallyVariedScene(r: Int, g: Int, b: Int): Bitmap {
+        val bitmap = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888)
+        val neutralCandidate = Color.rgb(r, g, b)
+        for (y in 0 until 120) for (x in 0 until 120) {
+            val material = ((x / 12) + (y / 12) * 3) % 11
+            bitmap.setPixel(x, y, when (material) {
+                0 -> Color.rgb(50, 90, 180)  // distinctly colored material, excluded from anchors
+                1 -> Color.rgb(170, 60, 50)  // another distinct material
+                else -> neutralCandidate
+            })
+        }
+        return bitmap
+    }
+
+    private fun assertWhiteBalanceEvidence(analysis: AnalysisResult) {
+        assertTrue("scene must contain genuinely distinct chromaticities; measured ${analysis.colorAnalysis.chromaDispersion}",
+            analysis.colorAnalysis.chromaDispersion > 0.015f)
+        assertTrue("scene must not imply opposing illumination between halves; measured ${analysis.neutralAnchors.halfDisagreement}",
+            analysis.neutralAnchors.halfDisagreement < 0.06f)
+        assertTrue("candidate neutrals must be measured rather than inferred from the scene average",
+            analysis.neutralAnchors.count > 1000)
+    }
+
     // === p95S: 95th percentile of saturation ===
 
     @Test
@@ -247,11 +278,12 @@ class ImageForensicsTest {
     // === White balance: anchor-driven correction ===
 
     @Test
-    fun `warm gray-card cast is corrected via neutral anchors`() {
-        // Warm-cast gray card: strong anchor evidence, low saturation → cast must be corrected.
-        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(180, 130, 90))
+    fun `warm cast in varied scene permits anchor-based white balance`() {
+        // Several material colors plus spatially consistent candidate-neutral regions.
+        // A solid gray card alone cannot be identified from pixels without a reference.
+        val bitmap = createChromaticallyVariedScene(180, 130, 90)
         val analysis = ImageAnalyzer.analyze(bitmap)
+        assertWhiteBalanceEvidence(analysis)
         val plan = ContextualDecisionEngine.evaluate(analysis)
         val wb = plan.decisions.find { it.parameter == "WhiteBalance" }
         assertNotNull("warm gray-card cast must produce a WhiteBalance decision (anchors=${analysis.neutralAnchors.count}, castNorm R-B=${analysis.neutralAnchors.avgR - analysis.neutralAnchors.avgB})", wb)
@@ -270,11 +302,11 @@ class ImageForensicsTest {
     // === P1: WB tint axis (green-magenta) ===
 
     @Test
-    fun `green cast is measured and neutralized via the tint decision`() {
-        // Green-cast gray card: G sits far above the R/B midpoint. Anchors carry the evidence.
-        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(110, 165, 112))
+    fun `green tint on varied scene generates renderable correction`() {
+        // This tests the measured tint axis and renderer with cross-material evidence.
+        val bitmap = createChromaticallyVariedScene(110, 165, 112)
         val analysis = ImageAnalyzer.analyze(bitmap)
+        assertWhiteBalanceEvidence(analysis)
         val na = analysis.neutralAnchors
         assertTrue("green gray card must have anchors; count=${na.count}", na.count > 1000)
         assertTrue("tintNorm must be positive (G above midpoint); got ${na.tintNorm}",
@@ -285,8 +317,8 @@ class ImageForensicsTest {
         assertTrue("green cast correction must pull G down (negative); got ${tint!!.magnitude}",
             tint.magnitude < 0f)
         // Render-level proof: apply the plan's WB pass; the G/R/B gap must shrink.
-        val px = IntArray(100 * 100) { Color.rgb(110, 165, 112) }
-        ImageProcessor.applyWhiteBalance(px, 100, 100, plan, analysis)
+        val px = IntArray(120 * 120) { Color.rgb(110, 165, 112) }
+        ImageProcessor.applyWhiteBalance(px, 120, 120, plan, analysis)
         val c = px[0]
         val gapBefore = 165f - (110f + 112f) / 2f
         val gapAfter = Color.green(c) - (Color.red(c) + Color.blue(c)) / 2f
@@ -295,11 +327,10 @@ class ImageForensicsTest {
     }
 
     @Test
-    fun `magenta cast produces a positive tint decision`() {
-        // Magenta-cast gray card: G sits far below the R/B midpoint.
-        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(165, 108, 162))
+    fun `magenta tint on varied scene generates positive tint correction`() {
+        val bitmap = createChromaticallyVariedScene(165, 108, 162)
         val analysis = ImageAnalyzer.analyze(bitmap)
+        assertWhiteBalanceEvidence(analysis)
         val na = analysis.neutralAnchors
         assertTrue("magenta gray card must have anchors; count=${na.count}", na.count > 1000)
         assertTrue("tintNorm must be negative (G below midpoint); got ${na.tintNorm}",
@@ -341,15 +372,15 @@ class ImageForensicsTest {
     }
 
     @Test
-    fun `single-light frame keeps white balance available`() {
-        // Uniform warm gray card: halves agree → the mixed-light gate must NOT fire.
-        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(180, 130, 90))
+    fun `single-light varied scene keeps white balance available`() {
+        // Matching anchor means across the frame indicate no measured lighting conflict.
+        val bitmap = createChromaticallyVariedScene(180, 130, 90)
         val analysis = ImageAnalyzer.analyze(bitmap)
+        assertWhiteBalanceEvidence(analysis)
         assertTrue("uniform frame halves must agree; got ${analysis.neutralAnchors.halfDisagreement}",
             analysis.neutralAnchors.halfDisagreement < 0.06f)
         val plan = ContextualDecisionEngine.evaluate(analysis)
-        assertNotNull("uniform warm cast must still be corrected",
+        assertNotNull("varied scene with cast evidence must still be corrected",
             plan.decisions.find { it.parameter == "WhiteBalance" })
     }
 }

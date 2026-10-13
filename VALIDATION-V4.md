@@ -1,3 +1,5 @@
+> **CI update 2026-10-13:** A later cloud build DID compile and assemble a signed V4 APK candidate at [run 38421009267](https://github.com/Kotaru27/Filter-slap/actions/runs/38421009267). The first real Android CI run executed 199 unit tests with four failures caused by contradictory uniform-color assumptions. See `CI-TEST-DIAGNOSIS.md` for the narrow test-fixture correction and its verification status. The remaining content of this document is the *historical pre-CI assessment*, not the latest build status. The candidate is not device-tested or quality-approved.
+
 # Filter Slap V4 — audited engineering status (2026-10-13)
 
 ## NOT A RELEASE — NO NEW APK EXISTS
