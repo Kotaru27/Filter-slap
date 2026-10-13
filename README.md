@@ -1,4 +1,4 @@
-**V6 Android learned-model candidate:** [Implementation](README-V6.md) · [Verification](VALIDATION-V6.md). Source includes on-device offline ONNX inference and V5 fallback; real-photo superiority is not established.
+**V7 offline selective-enhancement beta:** [Implementation](README-V7.md) · [Verification](VALIDATION-V7.md). Bundled color and salient-object models; one recipe for preview and export. Photographic-quality limits are documented.
 
 > **V4 engineering update — NOT AN APK RELEASE.** Read [VALIDATION-V4.md](VALIDATION-V4.md) before attempting to build.
 

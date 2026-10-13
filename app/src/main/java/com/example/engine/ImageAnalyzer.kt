@@ -197,7 +197,8 @@ data class AnalysisResult(
 )
 
 object ImageAnalyzer {
-    fun analyze(bitmap: Bitmap): AnalysisResult {
+    fun analyze(bitmap: Bitmap, checkCancelled: () -> Unit = {}): AnalysisResult {
+        checkCancelled()
         val width = bitmap.width
         val height = bitmap.height
         val maxDim = 256
@@ -210,8 +211,11 @@ object ImageAnalyzer {
 
         val pixelCount = analysisWidth * analysisHeight
         val pixels = IntArray(pixelCount)
-        scaledBitmap.getPixels(pixels, 0, analysisWidth, 0, 0, analysisWidth, analysisHeight)
-        scaledBitmap.recycle()
+        try {
+            scaledBitmap.getPixels(pixels, 0, analysisWidth, 0, 0, analysisWidth, analysisHeight)
+        } finally {
+            if (scaledBitmap !== bitmap) scaledBitmap.recycle()
+        }
 
         var sumR = 0L; var sumG = 0L; var sumB = 0L; var sumLuma = 0L
         var sumS = 0f
@@ -264,6 +268,7 @@ object ImageAnalyzer {
         var channelClipping = 0
 
         for (y in 0 until analysisHeight) {
+            checkCancelled()
             for (x in 0 until analysisWidth) {
                 val idx = y * analysisWidth + x
                 val pixel = pixels[idx]
@@ -349,6 +354,7 @@ object ImageAnalyzer {
         val skyZoneRows = (skyZoneRatio * analysisHeight).toInt()
         
         for (y in 0 until analysisHeight) {
+            checkCancelled()
             for (x in 0 until analysisWidth) {
                 val idx = y * analysisWidth + x
                 val luma = lumaMap[idx]
@@ -516,6 +522,7 @@ object ImageAnalyzer {
         var subjectDarkCnt = 0; var subjectBlownCnt = 0; var subjectCrushedCnt = 0; var subjectCnt = 0
         var shadowCrushedCnt = 0; var shadowCnt = 0
         for (y in 0 until analysisHeight) {
+            checkCancelled()
             for (x in 0 until analysisWidth) {
                 val idx = y * analysisWidth + x
                 val luma = lumaMap[idx]
@@ -589,6 +596,7 @@ object ImageAnalyzer {
             }
         }
         for (y in 0 until analysisHeight) {
+            checkCancelled()
             for (x in 0 until analysisWidth) {
                 val idx = y * analysisWidth + x
                 if (varMap[idx] > 10f) continue  // smooth pixels only
@@ -917,6 +925,7 @@ object ImageAnalyzer {
         val pyMax = max(1, analysisHeight - 1)
         val centerSigma = 0.40f
         for (y in 0 until analysisHeight) {
+            checkCancelled()
             for (x in 0 until analysisWidth) {
                 val idx = y * analysisWidth + x
                 val nx = (2f * x / pxMax) - 1f
@@ -950,6 +959,7 @@ object ImageAnalyzer {
         // Subject centroid + mass vs rule-of-thirds intersections, symmetry, headroom balance.
         var subjCx = 0f; var subjCy = 0f; var subjMass = 0f
         for (y in 0 until analysisHeight) {
+            checkCancelled()
             for (x in 0 until analysisWidth) {
                 val w = subjectMask[y * analysisWidth + x]
                 subjCx += x * w; subjCy += y * w; subjMass += w

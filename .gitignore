@@ -36,3 +36,9 @@ research/v6/**/votes*.csv
 research/v6/__pycache__/
 research/v6/tests/__pycache__/
 research/v6/.pytest_cache/
+
+# Pretrained assets are verified and prepared by the build; never commit binaries
+app/src/main/assets/*.onnx
+app/src/main/assets/*.bin
+app/src/main/assets/*sha256.txt
+app/src/androidTest/assets/private-*

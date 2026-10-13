@@ -43,7 +43,9 @@ data class RenderResult(
     val bitmap: Bitmap,
     val stats: ProcessingStats,
     val appliedPlan: EditPlan,
-    val appliedAnalysis: AnalysisResult
+    val appliedAnalysis: AnalysisResult,
+    val outcome: com.example.engine.v7.EnhancementOutcome? = null,
+    val recipe: com.example.engine.v7.EditRecipe? = null
 )
 
 object ImageProcessor {

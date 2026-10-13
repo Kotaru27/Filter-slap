@@ -64,6 +64,10 @@ import com.example.db.EditHistory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
+import com.example.engine.v7.EditRecipe
+import com.example.engine.v7.EnhancementOutcome
+import com.example.engine.v7.OfflineEnhancer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -113,6 +117,10 @@ fun FilterSlapApp() {
     var cachedAnalysis by remember { mutableStateOf<AnalysisResult?>(null) }
     var reportAnalysis by remember { mutableStateOf<AnalysisResult?>(null) }
     var activePlan by remember { mutableStateOf<EditPlan?>(null) }
+    var activeRecipe by remember { mutableStateOf<EditRecipe?>(null) }
+    var activeOutcome by remember { mutableStateOf<EnhancementOutcome?>(null) }
+    var photoRequest by remember { mutableLongStateOf(0L) }
+    var renderRequest by remember { mutableLongStateOf(0L) }
 
     var selectedCrop by remember { mutableStateOf(CropFrame.ORIGINAL) }
 
@@ -132,63 +140,71 @@ fun FilterSlapApp() {
     fun applyEdits(crop: CropFrame, og: Bitmap? = originalBitmap, analysis: AnalysisResult? = cachedAnalysis) {
         if (og == null || analysis == null) return
         processingJob?.cancel()
+        val request = ++renderRequest
+        val photo = photoRequest
+        activeRecipe = null
+        activeOutcome = null
+        isProcessing = true
         processingJob = coroutineScope.launch(Dispatchers.Default) {
+            val jobContext = coroutineContext
+            val checkCancelled = { jobContext.ensureActive(); Unit }
+            var cropped: Bitmap? = null
+            var unpublished: Bitmap? = null
             try {
-                withContext(Dispatchers.Main) {
-                    isProcessing = true
-                    stageProgress = 0f
+                val frame = cropBitmap(og, crop.aspectRatio)
+                cropped = frame
+                val frameAnalysis = if (crop.aspectRatio == null) analysis else ImageAnalyzer.analyze(frame, checkCancelled)
+                val render = OfflineEnhancer.process(context, frame, frameAnalysis, checkCancelled)
+                unpublished = render.bitmap
+                checkCancelled()
+                val plan = render.appliedPlan
+                val outcome = render.outcome!!
+                val details = plan.decisions.map { decision ->
+                    "${decision.parameter}${if (decision.regionMask != "Global") " (${decision.regionMask})" else ""}"
                 }
-
-                val cropped = cropBitmap(og, crop.aspectRatio)
-                val frameAnalysis = if (crop.aspectRatio == null) analysis
-                else ImageAnalyzer.analyze(cropped)
-
-                val render = com.example.engine.v6.V6AdaptiveEditor.process(context, cropped, frameAnalysis)
-                // Pixel processing is synchronous: cancellation may be requested while
-                // inside it. Never publish the obsolete bitmap after a discard/new pick.
-                if (!isActive) {
-                    render.bitmap.recycle()
-                    return@launch
-                }
-
-                withContext(Dispatchers.Main) {
-                    editedBitmap = render.bitmap
-                    stageProgress = 1f
-                }
-
-                // Truthful report: prose and notes from the plan that produced the pixels.
-                val appliedPlan = render.appliedPlan
-                val editNames = appliedPlan.decisions.map { dec ->
-                    "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
-                }
-                val enrichedAnalysis = frameAnalysis.copy(report = frameAnalysis.report.copy(
-                    toneAdjustments = if (appliedPlan.profileName == "V6_LEARNED") "Image-adaptive global tone applied; not a measured quality improvement" else appliedPlan.decisions
-                        .filter { it.parameter in listOf("Exposure", "Contrast", "Shadows", "Highlights", "Blacks", "Whites", "Dehaze", "Vignette", "CA") }
-                        .joinToString(", ") { dec -> toneProse(dec.parameter, dec.magnitude) }
-                        .ifEmpty { "Tone already balanced — no corrective curve applied" },
-                    colorAdjustments = if (appliedPlan.profileName == "V6_LEARNED") "Pretrained sRGB color transform (72% blend), screened for damage" else appliedPlan.decisions
-                        .filter { it.parameter in listOf("WhiteBalance", "WhiteBalanceTint", "Saturation", "Vibrance", "SplitToneShadows", "SplitToneHighlights", "SkyHue", "VegHue") }
-                        .joinToString(", ") { dec -> colorProse(dec.parameter, dec.magnitude) }
-                        .ifEmpty { "Color kept natural — no cast or saturation correction needed" }
+                val enriched = frameAnalysis.copy(report = frameAnalysis.report.copy(
+                    toneAdjustments = plan.decisions.mapNotNull { decision -> when(decision.parameter) {
+                        "AdaptiveColorTone" -> "Adaptive tone with highlight protection"
+                        "LocalShadows" -> "Selective subject shadow lift"
+                        "Shadows" -> "Global shadow lift"
+                        else -> null
+                    } }.joinToString(", ").ifEmpty { "Source tone retained" },
+                    colorAdjustments = if (outcome.modelStrength > 0f)
+                        "Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection"
+                        else "Source colors retained"
                 ))
-
                 withContext(Dispatchers.Main) {
-                    activePlan = appliedPlan
-                    reportAnalysis = enrichedAnalysis
-                    analysisNotes = editNames.ifEmpty {
-                        if ("Smart NR" in render.stats.stagesApplied) listOf("Noise reduction")
-                        else listOf("No adjustments needed")
+                    if (request == renderRequest && photo == photoRequest) {
+                        editedBitmap = render.bitmap
+                        unpublished = null
+                        activePlan = plan
+                        activeRecipe = render.recipe
+                        activeOutcome = outcome
+                        reportAnalysis = enriched
+                        analysisNotes = listOf(outcome.status) + details
+                        stageProgress = 1f
+                        isProcessing = false
                     }
-                    isProcessing = false
                 }
             } catch (_: CancellationException) {
-                // Deliberately cancelled: newer pick/crop or discard owns the UI now.
-            } catch (e: Exception) {
-                e.printStackTrace()
+                // The newest photo/crop owns the UI. Cancellation is never a fallback.
+            } catch (oom: OutOfMemoryError) {
                 withContext(Dispatchers.Main) {
-                    isProcessing = false
-                    Toast.makeText(context, "Error processing image: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (request == renderRequest && photo == photoRequest) {
+                        isProcessing = false
+                        Toast.makeText(context, "Unable to enhance: insufficient memory", Toast.LENGTH_LONG).show()
+                    }
                 }
+            } catch (error: Exception) {
+                withContext(Dispatchers.Main) {
+                    if (request == renderRequest && photo == photoRequest) {
+                        isProcessing = false
+                        Toast.makeText(context, "Unable to enhance: ${error.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } finally {
+                unpublished?.recycle()
+                cropped?.let { if (it !== og && !it.isRecycled) it.recycle() }
             }
         }
     }
@@ -199,6 +215,11 @@ fun FilterSlapApp() {
         uri?.let { pickedUri ->
             processingJob?.cancel()
             decodeJob?.cancel()
+            val request = ++photoRequest
+            renderRequest++
+            activeRecipe = null
+            activeOutcome = null
+            analysisNotes = emptyList()
             originalBitmap = null
             editedBitmap = null
             cachedAnalysis = null
@@ -209,52 +230,69 @@ fun FilterSlapApp() {
             // Decoding and analysis are cancellable at their suspension boundary.
             isDecoding = true
             decodeJob = coroutineScope.launch(Dispatchers.IO) {
+                val jobContext = coroutineContext
+                var unpublished: Bitmap? = null
                 try {
                     val bitmap = loadBitmapFromUri(context, pickedUri)
                     if (bitmap != null) {
-                        val analysis = ImageAnalyzer.analyze(bitmap)
+                        unpublished = bitmap
+                        val analysis = ImageAnalyzer.analyze(bitmap) { jobContext.ensureActive() }
                         // FIDELITY RULE: output dimensions and aspect ratio are LOCKED to the
                         // original unless the user explicitly picks a crop in the report.
                         // The analyzer's crop recommendation is a SUGGESTION shown there —
                         // never auto-applied.
                         withContext(Dispatchers.Main) {
-                            if (originalUri == pickedUri) {
+                            if (photoRequest == request) {
                                 isDecoding = false
                                 originalBitmap = bitmap
+                                unpublished = null
                                 cachedAnalysis = analysis
                                 reportAnalysis = analysis
                                 selectedCrop = CropFrame.ORIGINAL
                                 applyEdits(CropFrame.ORIGINAL, bitmap, analysis)
-                            } else {
-                                bitmap.recycle()
                             }
                         }
                     } else {
                         withContext(Dispatchers.Main) {
+                          if (photoRequest == request) {
                             isProcessing = false
                             isDecoding = false
                             originalUri = null   // failed load must not leave a phantom source
                             Toast.makeText(context, "Failed to load image", Toast.LENGTH_SHORT).show()
+                          }
                         }
                     }
                 } catch (_: CancellationException) {
                     // No stale result/error is allowed to overwrite the new selection.
+                } catch (oom: OutOfMemoryError) {
+                    withContext(Dispatchers.Main) {
+                        if (photoRequest == request) {
+                            isProcessing = false
+                            isDecoding = false
+                            originalUri = null
+                            Toast.makeText(context, "Unable to load: insufficient memory", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                     withContext(Dispatchers.Main) {
-                        if (originalUri == pickedUri) {
+                        if (photoRequest == request) {
                             isProcessing = false
                             isDecoding = false
                             originalUri = null
                             Toast.makeText(context, "Error loading image: ${e.message}", Toast.LENGTH_LONG).show()
                         }
                     }
-                }
+                } finally { unpublished?.let { if (!it.isRecycled) it.recycle() } }
             }
         }
     }
 
     fun discard() {
+        photoRequest++
+        renderRequest++
+        activeRecipe = null
+        activeOutcome = null
         decodeJob?.cancel()
         processingJob?.cancel()
         isDecoding = false
@@ -276,10 +314,13 @@ fun FilterSlapApp() {
         if (isSaving || isProcessing || editedBitmap == null) return
         val uri = originalUri ?: return
         val crop = selectedCrop
+        val recipe = activeRecipe ?: return
+        val analysis = reportAnalysis ?: return
         var saveProfile = activePlan?.profileName ?: "AUTO"
         val saveNotes = analysisNotes.toMutableList()
         isSaving = true
         coroutineScope.launch(Dispatchers.IO) {
+            val jobContext = coroutineContext
             var savedUri: Uri? = null
             var outputSize = ""
             try {
@@ -288,23 +329,18 @@ fun FilterSlapApp() {
                 try {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
-                        val fullAnalysis = ImageAnalyzer.analyze(cropped)
-                        val exportRender = com.example.engine.v6.V6AdaptiveEditor.process(context, cropped, fullAnalysis)
+                        val exportRender = OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
                         val rendered = exportRender.bitmap
                         saveProfile = exportRender.appliedPlan.profileName
                         try {
                             outputSize = "${rendered.width} × ${rendered.height}"
-                            // Full-resolution render can legitimately choose a different
-                            // plan from the screen preview. History must report the actual
-                            // exported pixels, not a cached preview's decisions.
+                            // Export renders the immutable recipe the preview approved.
                             val appliedExportNotes = exportRender.appliedPlan.decisions.map { dec ->
                                 "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
                             }
                             saveNotes.clear()
-                            saveNotes.addAll(appliedExportNotes.ifEmpty {
-                                if ("Smart NR" in exportRender.stats.stagesApplied) listOf("Noise reduction")
-                                else listOf("No adjustments needed")
-                            })
+                            saveNotes.add(exportRender.outcome!!.summary())
+                            saveNotes.addAll(appliedExportNotes)
                             savedUri = saveBitmapToGallery(context, rendered)
                                 ?: throw java.io.IOException("Gallery export failed")
                         } finally {
@@ -375,11 +411,14 @@ fun FilterSlapApp() {
             analysis = reportAnalysis!!,
             notes = analysisNotes,
             plan = activePlan,
+            outcome = activeOutcome,
             selectedCrop = selectedCrop,
             onCropChanged = { frame ->
                 showAnalysis = false
                 editedBitmap = null
                 activePlan = null
+                activeRecipe = null
+                activeOutcome = null
                 reportAnalysis = null
                 selectedCrop = frame
                 applyEdits(frame)
@@ -419,6 +458,7 @@ fun FilterSlapApp() {
                 stageProgress = stageProgress,
                 isSaving = isSaving,
                 activePlan = activePlan,
+                outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
                 onHold = { holding -> isHolding = holding },
                 onDiscard = ::discard,
@@ -503,6 +543,7 @@ private fun EditorScreen(
     stageProgress: Float,
     isSaving: Boolean,
     activePlan: EditPlan?,
+    outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
     onHold: (Boolean) -> Unit,
     onDiscard: () -> Unit,
@@ -547,7 +588,7 @@ private fun EditorScreen(
             )
         } else if (editedBitmap != null && !isProcessing) {
             PillLabel(
-                text = if (activePlan?.decisions?.isNotEmpty() == true) "AUTO EDIT" else "REVIEWED",
+                text = outcome?.status?.uppercase() ?: "ORIGINAL KEPT",
                 tint = Accent,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp)
             )
@@ -598,7 +639,7 @@ private fun EditorScreen(
         ) {
             activePlan?.let { plan ->
                 Text(
-                    plan.profileName.replace('_', ' ') + " grading",
+                    outcome?.status ?: "Auto enhance",
                     color = Accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -684,6 +725,7 @@ private fun AnalysisSheet(
     analysis: AnalysisResult,
     notes: List<String>,
     plan: EditPlan?,
+    outcome: EnhancementOutcome?,
     selectedCrop: CropFrame,
     onCropChanged: (CropFrame) -> Unit
 ) {
@@ -741,7 +783,7 @@ private fun AnalysisSheet(
             }
             ReportSection("APPLIED EDITS") {
                 if (notes.isEmpty()) {
-                    Text("No adjustments needed — the photo was already right.", fontSize = 13.sp, color = TextSecondary)
+                    Text("Original retained after review.", fontSize = 13.sp, color = TextSecondary)
                 } else {
                     notes.forEach { note ->
                         Row(modifier = Modifier.padding(vertical = 3.dp)) {
@@ -749,6 +791,18 @@ private fun AnalysisSheet(
                             Text(note, fontSize = 13.sp, color = TextPrimary)
                         }
                     }
+                }
+            }
+            ReportSection("DIAGNOSTICS") {
+                ReportRow("Build", BuildConfig.VERSION_NAME + " · " + BuildConfig.SOURCE_REVISION)
+                outcome?.let { result ->
+                    ReportRow("Engine", result.engine)
+                    ReportRow("Result", result.status)
+                    ReportRow("Recipe", result.recipeId)
+                    ReportRow("Foreground", if (result.maskUsed) "Salient-object mask applied" else "Not applied")
+                    ReportRow("Mean RGB change", "%.2f / 255".format(result.damage.meanChange))
+                    ReportRow("New clipping", "%.3f%%".format(result.damage.newlyClipped * 100))
+                    result.reasons.forEach { ReportRow("Processing", it) }
                 }
             }
             ReportSection("FRAME") {
@@ -883,7 +937,11 @@ private fun loadFullResBitmapFromUri(context: Context, uri: Uri): Bitmap? {
         }
 
         // Pass 2: decode at (or under) the cap.
-        val options = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
+        val options = BitmapFactory.Options().apply {
+            this.inSampleSize = inSampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            if (Build.VERSION.SDK_INT >= 26) inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
+        }
         var bitmap = context.contentResolver.openInputStream(uri)?.let { BitmapFactory.decodeStream(it, null, options) }
             ?: return null
 
@@ -949,6 +1007,8 @@ private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
 
         options.inJustDecodeBounds = false
         options.inSampleSize = inSampleSize
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888
+        if (Build.VERSION.SDK_INT >= 26) options.inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
         var bitmap = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, options)
         } ?: return null
@@ -989,7 +1049,7 @@ private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
     }
 }
 
-private suspend fun saveBitmapToGallery(context: Context, bitmap: Bitmap): Uri? {
+internal suspend fun saveBitmapToGallery(context: Context, bitmap: Bitmap): Uri? {
     return withContext(Dispatchers.IO) {
         val filename = "AutoEdit_${System.currentTimeMillis()}.jpg"
         val contentValues = ContentValues().apply {
