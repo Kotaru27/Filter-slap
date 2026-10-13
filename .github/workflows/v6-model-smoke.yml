@@ -1,0 +1,40 @@
+name: V6 pretrained enhancement research checks (NOT Android V6)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'research/v6/**'
+      - '.github/workflows/v6-model-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  model-research-smoke:
+    name: Verify pinned pretrained model and math
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout V6 research code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: python -m pip install 'numpy>=1.26,<3' 'Pillow>=10,<13'
+      - name: Run deterministic LUT math and benchmark safety tests
+        run: python -m unittest discover -s research/v6/tests -v
+      - name: Install CPU-only PyTorch for upstream model inference
+        run: python -m pip install 'torch==2.6.0' --index-url https://download.pytorch.org/whl/cpu
+      - name: Retrieve and verify exact pinned upstream pretrained weights
+        run: python research/v6/fetch_weights.py --output research/v6/model_weights
+      - name: Run REAL pretrained inference on three synthetic probes (not a quality benchmark)
+        run: python research/v6/smoke_pretrained.py --model-dir research/v6/model_weights --output research/v6/smoke_audit.json
+      - name: Upload inference-only smoke audit (NO user photographs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: V6-pretrained-synthetic-inference-audit
+          path: research/v6/smoke_audit.json
+          if-no-files-found: error
