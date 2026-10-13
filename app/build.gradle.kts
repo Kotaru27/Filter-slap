@@ -14,8 +14,12 @@ android {
     applicationId = "com.aistudio.filterslap.qwezx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "1.2.0-v6-beta"
+    versionCode = 4
+    versionName = "1.3.0-v7-beta"
+
+    val sourceRevision = providers.exec { commandLine("git", "rev-parse", "--short=12", "HEAD") }
+      .standardOutput.asText.get().trim()
+    buildConfigField("String", "SOURCE_REVISION", "\"$sourceRevision\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -45,6 +49,14 @@ android {
   buildFeatures {
     compose = true
     buildConfig = true
+  }
+  splits {
+    abi {
+      isEnable = true
+      reset()
+      include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+      isUniversalApk = true
+    }
   }
   testOptions { unitTests { isIncludeAndroidResources = true; all { it.maxHeapSize = "2g" } } }
   dependenciesInfo {
@@ -108,6 +120,7 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
+  testRuntimeOnly("com.microsoft.onnxruntime:onnxruntime:1.30.0")
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)

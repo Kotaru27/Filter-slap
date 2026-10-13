@@ -69,7 +69,7 @@ object V6AdaptiveEditor {
     }
 
     // Bitmap scaling matches the pretrained classifier's 256x256 bilinear image resize.
-    private fun predict(context: Context, original: Bitmap): FloatArray {
+    internal fun predict(context: Context, original: Bitmap): FloatArray {
         val model = load(context)
         val scaled = Bitmap.createScaledBitmap(original, PREVIEW, PREVIEW, true)
         val pixels = IntArray(PREVIEW * PREVIEW)
@@ -91,6 +91,14 @@ object V6AdaptiveEditor {
                 return values
             }
         }
+    }
+
+    internal fun fusedLut(context: Context, original: Bitmap): FloatArray {
+        val model = load(context)
+        val coefficients = predict(context, original)
+        return FloatArray(BASIS_SIZE) { i -> coefficients[0] * model.bases[i] +
+            coefficients[1] * model.bases[BASIS_SIZE + i] +
+            coefficients[2] * model.bases[2 * BASIS_SIZE + i] }
     }
 
     /** Identity and boundary behavior tested separately in host unit tests. */

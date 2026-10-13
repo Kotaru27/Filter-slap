@@ -3,7 +3,7 @@ name: Build and verify debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'upgrade/**']
 
 jobs:
   verify-and-build:
@@ -29,6 +29,7 @@ jobs:
           python -m pip install 'torch==2.6.0' --index-url https://download.pytorch.org/whl/cpu
           python research/v6/fetch_weights.py --output research/v6/model_weights
           python research/v6/export_android_model.py --model-dir research/v6/model_weights --output-dir app/src/main/assets
+          python research/v7/prepare_assets.py --output-dir app/src/main/assets
       - name: Prepare Gradle wrapper
         run: chmod +x gradlew
       - name: Run full Android unit tests (required; failures block APK)
@@ -36,10 +37,10 @@ jobs:
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
-        run: test -s app/build/outputs/apk/debug/app-debug.apk
+        run: test -s app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
       - name: Verify signed APK and native alignment
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
+          APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
       - name: Upload test reports for review
@@ -52,6 +53,6 @@ jobs:
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V6-learned-offline-debug-CANDIDATE-not-device-tested
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: FilterSlap-V7-selective-offline-debug-CANDIDATE
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           if-no-files-found: error
