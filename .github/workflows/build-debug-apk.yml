@@ -1,0 +1,61 @@
+name: Build and verify debug APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 40
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+      - name: Prepare Gradle wrapper
+        run: chmod +x gradlew
+      - name: Run image-engine tests (failures are NOT ignored)
+        id: unit_tests
+        # Build a separately labeled candidate even if tests fail, so a failed
+        # test does not conceal whether Android compilation works. Final job
+        # remains FAILED until tests pass; APK must not be described as verified.
+        continue-on-error: true
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+      - name: Build independently signed debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Verify APK is present and nonempty
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify signed APK and native alignment
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
+      - name: Upload test reports for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+      - name: Upload freshly built debug candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilterSlap-V4-debug-CANDIDATE-not-device-tested
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Fail release gate if engine tests did not pass
+        if: steps.unit_tests.outcome != 'success'
+        run: |
+          echo 'FAIL: unit tests did not pass. APK is an unverified candidate, not a release.'
+          exit 1

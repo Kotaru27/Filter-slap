@@ -1,0 +1,50 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Top Left Corner -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M38,30 L32,30 Q28,30 28,34 L28,40" />
+
+    <!-- Top Right Corner -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M70,30 L76,30 Q80,30 80,34 L80,40" />
+
+    <!-- Bottom Left Corner -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M28,68 L28,74 Q28,78 32,78 L38,78" />
+
+    <!-- Bottom Right Corner -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M80,68 L80,74 Q80,78 76,78 L70,78" />
+
+    <!-- Center Circle (Lens) -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M54,36 A18,18 0 1,0 54,72 A18,18 0 1,0 54,36" />
+
+    <!-- Top Right Dot (Flash/Sensor) -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M76,26 A3,3 0 1,0 76,32 A3,3 0 1,0 76,26" />
+
+</vector>
