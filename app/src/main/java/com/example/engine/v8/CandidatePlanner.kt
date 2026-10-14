@@ -161,6 +161,18 @@ object CandidatePlanner {
                 backgroundContrast=backgroundContrast)
             if(hasLut) result += CandidateSettings("Local light with learned color",
                 spatialStrength=strength*.85f,lutStrength=.38f)
+            // A separate option for genuinely uneven illumination, not a preset
+            // for any object, sky, architecture or example photograph. Retain
+            // the complete legacy set as alternatives and do not force selection.
+            val broadRange=b.whole.p90-b.whole.p10
+            val recoverable=e.spatialPotential
+            val unevenLight=b.whole.p90>.83f && b.whole.p10<.22f &&
+                broadRange>.63f && recoverable>.065f
+            if(unevenLight) {
+                val stronger=(1.12f+.65f*recoverable).coerceIn(1.12f,1.35f)
+                result += CandidateSettings("Selective illumination recovery",
+                    spatialStrength=stronger)
+            }
         }
         return result.filterIndexed { index,c -> index==0 || !c.isNeutral }
     }
