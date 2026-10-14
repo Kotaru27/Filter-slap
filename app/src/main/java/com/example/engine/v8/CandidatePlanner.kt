@@ -126,14 +126,26 @@ object CandidatePlanner {
 
     fun assess(e: CorrectionEvidence, settings: CandidateSettings, after: FrameTones,
                meanChange: Float, newlyClipped: Float, newlyCrushed: Float,
-               hueShifted: Float, vividBoosted: Float): CandidateAssessment {
+               hueShifted: Float, vividBoosted: Float,
+               neutralErrorBefore: Float = 0f, neutralErrorAfter: Float = 0f): CandidateAssessment {
         val valid = meanChange.isFinite() && meanChange <= 38f &&
             newlyClipped <= .003f && newlyCrushed <= .003f &&
             hueShifted <= .035f && vividBoosted <= .035f
         if (!valid) return CandidateAssessment(settings,Float.NEGATIVE_INFINITY,
             "Output damage limit exceeded",meanChange,false)
         if (settings.isNeutral) return CandidateAssessment(settings,0f,"Original preserved",0f,true)
-        val correction = deficit(e,e.before) - deficit(e,after)
+        var correction = deficit(e,e.before) - deficit(e,after)
+        val anchors = e.neutralRgb
+        if (anchors != null && anchors.size == 3 && anchors.all { it.isFinite() && it > 15f } &&
+            e.neutralCoverage >= .008f && e.neutralDisagreement < .07f) {
+            val mean = (anchors[0] + anchors[1] + anchors[2]) / 3f
+            val cast = (anchors.maxOrNull()!! - anchors.minOrNull()!!) / mean
+            if (cast > .065f && neutralErrorBefore.isFinite() && neutralErrorAfter.isFinite()) {
+                // A correction earns credit only when *actual corresponding pixels*
+                // become more neutral; gain settings alone never earn points.
+                correction += 110f * (neutralErrorBefore - neutralErrorAfter)
+            }
+        }
         // Changing more pixels is a cost, never a source of benefit.
         val cost = meanChange * .13f + newlyClipped*3000f + newlyCrushed*3000f +
             hueShifted*200f + vividBoosted*120f

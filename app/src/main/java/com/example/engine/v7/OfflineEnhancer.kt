@@ -101,6 +101,7 @@ object OfflineEnhancer {
             val sample=Bitmap.createScaledBitmap(canonical,sampleW,sampleH,true)
             try {
                 val before=measureTones(sample,mask,checkCancelled)
+                val beforeNeutral=measureNeutralError(sample,sample,checkCancelled)
                 val na=analysis.neutralAnchors
                 val evidence=CorrectionEvidence(before,intentionalDark,na.coverage,
                     na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB))
@@ -126,8 +127,10 @@ object OfflineEnhancer {
                         try {
                             val after=measureTones(rendered.bitmap,mask,checkCancelled)
                             val d=rendered.outcome!!.damage
+                            val afterNeutral=measureNeutralError(sample,rendered.bitmap,checkCancelled)
                             CandidatePlanner.assess(evidence,strategy,after,d.meanChange,
-                                d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted)
+                                d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted,
+                                beforeNeutral,afterNeutral)
                         } finally { rendered.bitmap.recycle() }
                     } catch(cancelled: CancellationException) { throw cancelled }
                     catch(unsafe: UnsafeRenderException) {
@@ -187,6 +190,38 @@ object OfflineEnhancer {
         return FrameTones(summary(all,total),
             if(nSubject>total*.04f)summary(subject,nSubject)else null,
             if(nBackground>total*.04f)summary(background,nBackground)else null)
+    }
+
+    /**
+     * Measures channel imbalance on the *same selected source pixels* in original
+     * and candidate. This measures actual color changes, not estimated WB gains.
+     * It only scores unsaturated, midtone source pixels and is further gated by
+     * independent neutral-anchor coverage and consistent illumination evidence.
+     */
+    private fun measureNeutralError(source: Bitmap, output: Bitmap,
+                                    cancelled: () -> Unit): Float {
+        require(source.width==output.width && source.height==output.height)
+        val original=IntArray(source.width);val revised=IntArray(output.width)
+        var red=0.0;var green=0.0;var blue=0.0;var selected=0
+        for(y in 0 until source.height){
+            cancelled()
+            source.getPixels(original,0,source.width,0,y,source.width,1)
+            output.getPixels(revised,0,output.width,0,y,output.width,1)
+            for(x in original.indices){
+                val p=original[x]
+                val r=p ushr 16 and 255;val g=p ushr 8 and 255;val b=p and 255
+                val hi=maxOf(r,g,b);val lo=minOf(r,g,b)
+                if(hi in 40..230 && (hi-lo).toFloat() <= .18f*hi){
+                    val q=revised[x]
+                    red+=(q ushr 16 and 255);green+=(q ushr 8 and 255);blue+=(q and 255)
+                    selected++
+                }
+            }
+        }
+        if(selected < source.width*source.height*.005f) return 0f
+        val mean=(red+green+blue)/(3.0*selected)
+        if(mean < 1.0)return 0f
+        return ((maxOf(red,green,blue)-minOf(red,green,blue))/selected/mean).toFloat()
     }
 
     /** Full output validation counts every rendered pixel, not an averaged thumbnail. */

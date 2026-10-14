@@ -59,6 +59,16 @@ class CandidatePlannerTest {
         assertTrue(confident.any { it.redGain != 1f })
     }
 
+    @Test fun `white balance earns points only for measured anchor improvement`() {
+        val e=CorrectionEvidence(FrameTones(r(.1f,.48f,.87f)),false,.025f,.012f,
+            floatArrayOf(132f,109f,85f))
+        val plan=CandidatePlanner.propose(e,false).last()
+        val helpful=CandidatePlanner.assess(e,plan,e.before,5f,0f,0f,0f,0f,.20f,.06f)
+        val harmful=CandidatePlanner.assess(e,plan,e.before,5f,0f,0f,0f,0f,.20f,.24f)
+        assertTrue(helpful.score > 0f)
+        assertTrue(harmful.score < 0f)
+    }
+
     @Test fun `without model genuine exposure correction is still possible`() {
         val e=CorrectionEvidence(FrameTones(r(.04f,.16f,.60f)),false,0f,0f)
         val plans=CandidatePlanner.propose(e,false)
