@@ -50,6 +50,12 @@ jobs:
           if-no-files-found: warn
       - name: Print synthetic audit metrics for independent review
         run: cat app/build/v9-independent-audit/synthetic-metrics.csv
+      - name: Emit small public-photo before-after sheet for visual review
+        run: |
+          python research/quality/make_contact_sheet.py \
+            --directory app/build/public-photo-pairs \
+            --output app/build/public-photo-pairs/contact-sheet.jpg \
+            --label "V9 unchanged"
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
