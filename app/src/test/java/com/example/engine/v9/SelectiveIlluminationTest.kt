@@ -24,7 +24,11 @@ class SelectiveIlluminationTest {
         assertTrue(candidates.any{it.name=="Selective illumination recovery" && it.spatialStrength>1f})
         assertTrue(candidates.any{it.name=="Local light recovery" && it.spatialStrength<=1f})
         assertTrue(candidates.first().isNeutral)
-        assertTrue(proposals(.13f,.43f,.77f,.26f).none{it.spatialStrength>1f})
+        assertTrue(proposals(.13f,.43f,.72f,.26f).none{it.spatialStrength>1f})
+        // Large relative contrast can require selective recovery even when
+        // diffuse highlights never approach white.
+        assertTrue(proposals(.06f,.50f,.79f,.20f)
+            .any{it.name=="Selective illumination recovery"})
         assertTrue(proposals(.13f,.43f,.94f,.0f).none{it.spatialStrength>1f})
         assertTrue(proposals(.09f,.43f,.94f,.26f,true).none{it.spatialStrength>0f})
     }
