@@ -177,6 +177,11 @@ fun FilterSlapApp() {
                             add("Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection")
                         if (plan.decisions.any { it.parameter == "WhiteBalance" })
                             add("Neutral-anchor white balance applied")
+                        if (outcome.modelStrength == 0f &&
+                            plan.decisions.none { it.parameter == "WhiteBalance" } &&
+                            plan.decisions.any { it.parameter in setOf("Exposure","Contrast",
+                                "LocalToneRecovery","LocalShadows","Shadows","SubjectDetail","NoiseReduction") })
+                            add("Tone-only correction: source hue/chroma direction preserved in linear sRGB")
                     }.joinToString(", ").ifEmpty { "Source colors retained" }
                 ))
                 withContext(Dispatchers.Main) {
