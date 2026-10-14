@@ -6,6 +6,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.pow
+import com.example.engine.v9.CoherentTone
 
 /** Pure pixel operations shared by Android rendering and host regression tests. */
 object EnhancementMath {
@@ -119,7 +120,8 @@ object EnhancementMath {
         val detail = recipe.detailStrength * detailDifference * detailWeight
         val denoise = -detailDifference * recipe.noiseStrength *
             (1f-EnhancementMath.smooth(.012f,.045f,abs(detailDifference)))
-        val toneDelta = lift + detail + denoise + spatialLift.coerceIn(0f,.19f)
+        val toneDelta = lift + detail + denoise + spatialLift.coerceIn(0f,.19f) +
+            CoherentTone.difference(y,recipe.coherentShadows,recipe.coherentHighlights)
         val gain = if (y > .001f) toneDelta / y else 0f
         dest[0] += r * gain; dest[1] += g * gain; dest[2] += b * gain
         boundedDelta(r, g, b, dest)
@@ -182,13 +184,14 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
     val contrast: Float = 0f, val subjectContrast: Float = 0f,
     val redGain: Float = 1f, val greenGain: Float = 1f, val blueGain: Float = 1f,
     val strategy: String = "Legacy", val backgroundContrast: Float = 0f,
-    val spatialStrength: Float = 0f, val noiseLevels: Float = 1f) {
+    val spatialStrength: Float = 0f, val noiseLevels: Float = 1f,
+    val coherentShadows: Float = 0f, val coherentHighlights: Float = 0f) {
     private val table = lut?.copyOf()
     val isIdentity get() = modelStrength == 0f && globalLift == 0f &&
         subjectLift == 0f && detailStrength == 0f && noiseStrength == 0f &&
         exposureEv == 0f && subjectEv == 0f && backgroundEv == 0f &&
         contrast == 0f && subjectContrast == 0f && backgroundContrast == 0f &&
-        spatialStrength == 0f &&
+        spatialStrength == 0f && coherentShadows == 0f && coherentHighlights == 0f &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
     internal fun lookup(r: Float, g: Float, b: Float, dest: FloatArray) {
         if (table == null || modelStrength == 0f) {
@@ -200,7 +203,8 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
         sourceAspect,id+"-${(factor*100).toInt()}",modelFingerprint,diagnostics+reason,noiseStrength*factor,
         exposureEv*factor,subjectEv*factor,backgroundEv*factor,contrast*factor,subjectContrast*factor,
         1f+(redGain-1f)*factor,1f+(greenGain-1f)*factor,1f+(blueGain-1f)*factor,
-        strategy,backgroundContrast*factor,spatialStrength*factor,noiseLevels)
+        strategy,backgroundContrast*factor,spatialStrength*factor,noiseLevels,
+        coherentShadows*factor,coherentHighlights*factor)
 }
 
 /** Counts newly damaged samples; recovered pixels elsewhere cannot cancel these counts. */
