@@ -137,7 +137,7 @@ object CandidatePlanner {
             result += CandidateSettings("Independent regions",subjectEv=sEv,backgroundEv=bEv,
                 subjectContrast=if (sEv != 0f && s != null && s.range < .31f) .13f else 0f,
                 backgroundContrast=backgroundContrast)
-        if (e.spatialPotential > .025f) {
+        if (!dark && e.spatialPotential > .025f) {
             val strength=(.48f+.52f*e.spatialPotential).coerceIn(.48f,.92f)
             result += CandidateSettings("Local light recovery",spatialStrength=strength)
             result += CandidateSettings("Local balanced correction",spatialStrength=strength,
