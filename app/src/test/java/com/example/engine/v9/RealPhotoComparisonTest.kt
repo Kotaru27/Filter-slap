@@ -30,8 +30,10 @@ class RealPhotoComparisonTest {
     @Test fun `paired input and actual offline output prepared for independent review`() {
         val inputPath=System.getenv("PHOTO_COMPARE_INPUT")
         val outputPath=System.getenv("PHOTO_COMPARE_OUTPUT")
-        assumeTrue(inputPath!=null && outputPath!=null &&
-            File(inputPath).isDirectory)
+        assumeTrue(inputPath!=null && outputPath!=null)
+        require(File(inputPath!!).isDirectory) {
+            "CI photographic comparison input path missing: $inputPath"
+        }
         val root=File(outputPath!!)
         require(root.mkdirs() || root.isDirectory)
         val context=ApplicationProvider.getApplicationContext<Context>()
