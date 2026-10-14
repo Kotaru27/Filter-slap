@@ -32,6 +32,16 @@ class FullSceneRenderingTest {
         return MaskField.fromProbabilities(probabilities,10,10)!!
     }
 
+    @Test fun `report distinguishes whole-scene grade from selective corrections`() {
+        val report=DamageReport(5f,0f,0f,0f,0f,100)
+        val globallyGraded=EnhancementOutcome("Enhanced","V8_AUTO_EDITOR","r1","model",.65f,true,report,emptyList())
+        assertTrue(globallyGraded.summary().contains("whole-scene grade"))
+        val regionOnly=EnhancementOutcome("Enhanced","V8_AUTO_EDITOR","r2","none",0f,true,report,emptyList())
+        assertTrue(regionOnly.summary().contains("regional corrections"))
+        val noEdit=EnhancementOutcome("Original kept","V8_AUTO_EDITOR","r3","none",0f,true,report,emptyList())
+        assertTrue(noEdit.summary().contains("original preserved"))
+    }
+
     @Test fun `global learned LUT does not depend on foreground membership`() {
         val recipe=EditRecipe(syntheticGlobalLut(.75f),validMask(),.68f,0f,0f,0f,
             1f,"whole-scene","unit",emptyList())

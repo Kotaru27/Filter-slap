@@ -236,5 +236,14 @@ data class DamageReport(val meanChange: Float, val newlyClipped: Float, val newl
 data class EnhancementOutcome(val status: String, val engine: String, val recipeId: String,
     val modelFingerprint: String, val modelStrength: Float, val maskUsed: Boolean,
     val damage: DamageReport, val reasons: List<String>) {
-    fun summary() = "$status · $engine · ${if(maskUsed) "selective lighting" else "global lighting"}"
+    fun summary(): String {
+        val scope=when {
+            status=="Original kept" -> "original preserved"
+            modelStrength>0f && maskUsed -> "whole-scene grade + local refinements"
+            modelStrength>0f -> "whole-scene grade"
+            maskUsed -> "independent regional corrections"
+            else -> "whole-scene corrections"
+        }
+        return "$status · $engine · $scope"
+    }
 }

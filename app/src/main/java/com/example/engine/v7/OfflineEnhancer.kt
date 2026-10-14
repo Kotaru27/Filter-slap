@@ -285,8 +285,13 @@ object OfflineEnhancer {
                 else -> "Enhanced"
             }
             if(status == "Original kept") decisions.clear()
+            val scope=when {
+                recipe.isIdentity -> "Unedited original preserved"
+                recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
+                else -> "No learned global grade selected; independent measured corrections applied"
+            }
             val outcome=EnhancementOutcome(status,"V8_AUTO_EDITOR",recipe.id,recipe.modelFingerprint,
-                recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics)
+                recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
