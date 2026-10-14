@@ -166,8 +166,13 @@ object CandidatePlanner {
             // the complete legacy set as alternatives and do not force selection.
             val broadRange=b.whole.p90-b.whole.p10
             val recoverable=e.spatialPotential
-            val unevenLight=b.whole.p90>.83f && b.whole.p10<.22f &&
-                broadRange>.63f && recoverable>.065f
+            val brightVsMid=b.whole.p90-b.whole.median
+            val midVsShadow=b.whole.median-b.whole.p10
+            // Use scene-relative illumination separation. Overcast daylight
+            // need not contain near-white pixels to be severely backlit.
+            val unevenLight=b.whole.p10<.22f && broadRange>.63f &&
+                brightVsMid>.16f && midVsShadow>.22f &&
+                recoverable>.065f
             if(unevenLight) {
                 val stronger=(1.12f+.65f*recoverable).coerceIn(1.12f,1.35f)
                 result += CandidateSettings("Selective illumination recovery",
