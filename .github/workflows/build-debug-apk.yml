@@ -38,8 +38,8 @@ jobs:
           python research/quality/prepare_public_photos.py --output-dir app/build/public-photo-input
       - name: Run full Android unit tests (required; failures block APK)
         env:
-          PHOTO_COMPARE_INPUT: app/build/public-photo-input
-          PHOTO_COMPARE_OUTPUT: app/build/public-photo-pairs
+          PHOTO_COMPARE_INPUT: ${{ github.workspace }}/app/build/public-photo-input
+          PHOTO_COMPARE_OUTPUT: ${{ github.workspace }}/app/build/public-photo-pairs
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
       - name: Publish synthetic V9 audit metrics (not photo-quality evidence)
         if: always()
