@@ -53,6 +53,6 @@ jobs:
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V10-color-fidelity-debug-UNVERIFIED-QUALITY
+          name: FilterSlap-V11-guardrails-debug-UNVERIFIED-PHOTO-QUALITY
           path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           if-no-files-found: error
