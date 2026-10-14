@@ -30,10 +30,12 @@ data class CandidateSettings(
     val subjectContrast: Float = 0f,
     val redGain: Float = 1f,
     val greenGain: Float = 1f,
-    val blueGain: Float = 1f
+    val blueGain: Float = 1f,
+    val backgroundContrast: Float = 0f
 ) {
     val isNeutral get() = lutStrength == 0f && exposureEv == 0f && subjectEv == 0f &&
         backgroundEv == 0f && contrast == 0f && subjectContrast == 0f &&
+        backgroundContrast == 0f &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
 }
 
@@ -78,6 +80,11 @@ object CandidatePlanner {
         if (!e.intentionallyDark && before.whole.range in .08f.. .40f &&
             before.whole.median in .26f.. .72f)
             penalty += 65f * max(0f, .51f - after.whole.range)
+        // Independently score background tone only when there is real evidence
+        // of compressed midtone range, not simply because a mask exists.
+        if (!e.intentionallyDark && bg != null && bg.coverage > .08f &&
+            bg.range in .09f.. .38f && bg.median in .28f.. .72f)
+            penalty += 65f * max(0f,.45f-(after.background?.range ?: bg.range))
         return penalty
     }
 
@@ -98,6 +105,9 @@ object CandidatePlanner {
             ((.66f-bg.median)*1.2f).coerceIn(-.48f,0f) else 0f
         val contrast = if (!dark && b.whole.range in .08f.. .40f && b.whole.median in .26f.. .72f)
             ((.51f-b.whole.range)*.8f).coerceIn(0f,.22f) else 0f
+        val backgroundContrast = if (!dark && bg != null && bg.coverage > .08f &&
+            bg.range in .09f.. .38f && bg.median in .28f.. .72f)
+            ((.45f-bg.range)*.7f).coerceIn(0f,.18f) else 0f
         var wr=1f;var wg=1f;var wb=1f
         val anchors=e.neutralRgb
         if (anchors != null && anchors.size==3 && anchors.all { it.isFinite() && it>15f } &&
@@ -114,13 +124,15 @@ object CandidatePlanner {
             result += CandidateSettings("Learned grade",lutStrength=.85f)
             result += CandidateSettings("Learned with correction",lutStrength=.65f,
                 exposureEv=lift+lower,subjectEv=sEv,backgroundEv=bEv,contrast=contrast,
-                redGain=wr,greenGain=wg,blueGain=wb)
+                redGain=wr,greenGain=wg,blueGain=wb,backgroundContrast=backgroundContrast)
         }
         result += CandidateSettings("Photographic correction",exposureEv=lift+lower,
-            subjectEv=sEv,backgroundEv=bEv,contrast=contrast,redGain=wr,greenGain=wg,blueGain=wb)
-        if (sEv != 0f || bEv != 0f)
+            subjectEv=sEv,backgroundEv=bEv,contrast=contrast,redGain=wr,greenGain=wg,blueGain=wb,
+            backgroundContrast=backgroundContrast)
+        if (sEv != 0f || bEv != 0f || backgroundContrast != 0f)
             result += CandidateSettings("Independent regions",subjectEv=sEv,backgroundEv=bEv,
-                subjectContrast=if (s != null && s.range < .31f) .13f else 0f)
+                subjectContrast=if (sEv != 0f && s != null && s.range < .31f) .13f else 0f,
+                backgroundContrast=backgroundContrast)
         return result.filterIndexed { index,c -> index==0 || !c.isNeutral }
     }
 

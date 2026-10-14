@@ -120,7 +120,8 @@ object OfflineEnhancer {
                         if(active) denoise else 0f,
                         strategy.exposureEv,strategy.subjectEv,strategy.backgroundEv,
                         strategy.contrast,strategy.subjectContrast,
-                        strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name)
+                        strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name,
+                        strategy.backgroundContrast)
                     candidates+=trial
                     val evaluation=try {
                         val rendered=render(sample,trial,analysis,checkCancelled)
@@ -142,15 +143,15 @@ object OfflineEnhancer {
                 val selected=CandidatePlanner.select(assessments)
                 val index=assessments.indexOf(selected)
                 val diagnostics=assessments.map { item ->
-                    "Candidate ${item.candidate.name}: score=${"%.2f".format(item.score)}, ${item.reason}"
+                    "Editing option ${item.candidate.name}: score=${"%.2f".format(item.score)}, ${item.reason}"
                 }
                 val chosen=candidates[index]
                 return EditRecipe(lut,mask,chosen.modelStrength,chosen.globalLift,chosen.subjectLift,
                     chosen.detailStrength,chosen.sourceAspect,chosen.id,fingerprint,
-                    notes+diagnostics+"Selected strategy: ${selected.candidate.name}",
+                    notes+diagnostics+"Selected editing strategy: ${selected.candidate.name}",
                     chosen.noiseStrength,chosen.exposureEv,chosen.subjectEv,chosen.backgroundEv,
                     chosen.contrast,chosen.subjectContrast,chosen.redGain,chosen.greenGain,chosen.blueGain,
-                    chosen.strategy)
+                    chosen.strategy,chosen.backgroundContrast)
             } finally { if(sample !== canonical) sample.recycle() }
         } finally { if(canonical !== input) canonical.recycle() }
     }
@@ -270,6 +271,7 @@ object OfflineEnhancer {
             decision("Exposure","Background",abs(recipe.backgroundEv))
             decision("Contrast","Global",abs(recipe.contrast))
             decision("Contrast","Subject",abs(recipe.subjectContrast))
+            decision("Contrast","Background",abs(recipe.backgroundContrast))
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
                 decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
@@ -283,12 +285,12 @@ object OfflineEnhancer {
                 else -> "Enhanced"
             }
             if(status == "Original kept") decisions.clear()
-            val outcome=EnhancementOutcome(status,"V8_CANDIDATE",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V8_AUTO_EDITOR",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V8_CANDIDATE",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V8_AUTO_EDITOR",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error

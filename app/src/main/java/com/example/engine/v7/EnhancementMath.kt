@@ -67,13 +67,15 @@ object EnhancementMath {
         val fg = foreground.coerceIn(0f, 1f)
         val highlightProtection = 1f - smooth(.68f, .98f, y)
         val shadowProtection = smooth(.008f, .10f, y)
-        val spatialStrength = if (recipe.mask != null) .30f + .70f * fg else 1f
+        // The learned LUT is a GLOBAL transform: the salient-object mask must not
+        // weaken it elsewhere in the photograph. Only explicit regional tools
+        // (exposure/contrast/detail) depend on foreground probabilities.
         recipe.lookup(r, g, b, dest)
         val modelY = luma(dest[0], dest[1], dest[2])
         val ratio = if (y > .001f) modelY / y else 1f
         val chroma = max(r, max(g,b)) - min(r, min(g,b))
         val colorStrength = .60f - .30f * smooth(.15f, .55f, chroma)
-        val strength = recipe.modelStrength * spatialStrength * highlightProtection *
+        val strength = recipe.modelStrength * highlightProtection *
             (if (modelY < y) shadowProtection else 1f)
         dest[0] = r + strength * ((r*ratio-r) + (dest[0]-r*ratio) * colorStrength)
         dest[1] = g + strength * ((g*ratio-g) + (dest[1]-g*ratio) * colorStrength)
@@ -95,7 +97,9 @@ object EnhancementMath {
             val scale = 1f + (gainEv-1f)*exposureProtection
             dest[0] *= scale; dest[1] *= scale; dest[2] *= scale
         }
-        val localContrast = (recipe.contrast + recipe.subjectContrast * fg).coerceIn(-.35f,.35f)
+        val backgroundWeight = if(recipe.mask!=null) 1f-fg else 0f
+        val localContrast = (recipe.contrast + recipe.subjectContrast * fg +
+            recipe.backgroundContrast * backgroundWeight).coerceIn(-.35f,.35f)
         if (localContrast != 0f) {
             val mid = luma(dest[0],dest[1],dest[2]).coerceIn(0f,1f)
             val u = mid-.5f
@@ -109,7 +113,9 @@ object EnhancementMath {
             (1f-y) * (1f-y) * shadowProtection
         val detailDifference = y - neighbourhoodLuma
         val detailWeight = (1f - smooth(.025f, .075f, abs(detailDifference))) *
-            (if (recipe.mask != null) fg else .35f) * highlightProtection
+            // Maintain measured fine-detail processing throughout the frame;
+            // the mask can add emphasis but never switch background detail off.
+            (if (recipe.mask != null) .40f+.60f*fg else .65f) * highlightProtection
         val detail = recipe.detailStrength * detailDifference * detailWeight
         val denoise = -detailDifference * recipe.noiseStrength *
             (1f-EnhancementMath.smooth(.012f,.045f,abs(detailDifference)))
@@ -175,12 +181,12 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
     val exposureEv: Float = 0f, val subjectEv: Float = 0f, val backgroundEv: Float = 0f,
     val contrast: Float = 0f, val subjectContrast: Float = 0f,
     val redGain: Float = 1f, val greenGain: Float = 1f, val blueGain: Float = 1f,
-    val strategy: String = "Legacy") {
+    val strategy: String = "Legacy", val backgroundContrast: Float = 0f) {
     private val table = lut?.copyOf()
     val isIdentity get() = modelStrength == 0f && globalLift == 0f &&
         subjectLift == 0f && detailStrength == 0f && noiseStrength == 0f &&
         exposureEv == 0f && subjectEv == 0f && backgroundEv == 0f &&
-        contrast == 0f && subjectContrast == 0f &&
+        contrast == 0f && subjectContrast == 0f && backgroundContrast == 0f &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
     internal fun lookup(r: Float, g: Float, b: Float, dest: FloatArray) {
         if (table == null || modelStrength == 0f) {
@@ -191,7 +197,8 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
         modelStrength*factor,globalLift*factor,subjectLift*factor,detailStrength*factor,
         sourceAspect,id+"-${(factor*100).toInt()}",modelFingerprint,diagnostics+reason,noiseStrength*factor,
         exposureEv*factor,subjectEv*factor,backgroundEv*factor,contrast*factor,subjectContrast*factor,
-        1f+(redGain-1f)*factor,1f+(greenGain-1f)*factor,1f+(blueGain-1f)*factor,strategy)
+        1f+(redGain-1f)*factor,1f+(greenGain-1f)*factor,1f+(blueGain-1f)*factor,
+        strategy,backgroundContrast*factor)
 }
 
 /** Counts newly damaged samples; recovered pixels elsewhere cannot cancel these counts. */
