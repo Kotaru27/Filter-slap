@@ -56,6 +56,11 @@ jobs:
             --directory app/build/public-photo-pairs \
             --output app/build/public-photo-pairs/contact-sheet.jpg \
             --label "V9 unchanged"
+      - name: Emit offline learned-grade ablation images
+        run: |
+          python research/quality/make_grade_ablation_sheet.py \
+            --directory app/build/public-photo-pairs \
+            --output app/build/public-photo-pairs/learned-grade-contact.jpg
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
