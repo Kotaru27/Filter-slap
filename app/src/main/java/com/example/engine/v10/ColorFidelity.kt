@@ -84,13 +84,18 @@ object ColorFidelity {
         require(original.size==edited.size && stride>0)
         val a=FloatArray(3);val b=FloatArray(3)
         var count=0;var chromaDrift=0.0;var overshoot=0.0;var hueError=0.0
-        var neutrals=0;var casts=0.0
+        var neutrals=0;var casts=0.0;var severeChromaLoss=0.0
         for(i in original.indices step stride){
             val s=original[i]; val t=edited[i]
             okLab((s ushr 16 and 255)/255f,(s ushr 8 and 255)/255f,(s and 255)/255f,a)
             okLab((t ushr 16 and 255)/255f,(t ushr 8 and 255)/255f,(t and 255)/255f,b)
             val ca=sqrt(a[1]*a[1]+a[2]*a[2]); val cb=sqrt(b[1]*b[1]+b[2]*b[2])
             chromaDrift+=abs(ca-cb)
+            // Large, unintended desaturation can wash out source material even
+            // with unchanged hue and no new clipped pixels. Do not penalize
+            // small desaturation or highlight gamut compression near white.
+            if(ca>.05f && a[0] in .15f.. .90f && b[0] in .15f.. .94f)
+                severeChromaLoss+=max(0f,ca*.60f-cb-.004f)
             if(ca>.028f){
                 overshoot+=max(0f,cb-ca*1.10f-.006f)
                 if(cb>.028f){
@@ -105,7 +110,8 @@ object ColorFidelity {
         }
         val n=max(1,count)
         return ColorAssessment((chromaDrift/n).toFloat(),(overshoot/n).toFloat(),
-            (hueError/n).toFloat(),if(neutrals>0)(casts/neutrals).toFloat()else 0f,n)
+            (hueError/n).toFloat(),if(neutrals>0)(casts/neutrals).toFloat()else 0f,n,
+            (severeChromaLoss/n).toFloat())
     }
 }
 
@@ -114,8 +120,10 @@ data class ColorAssessment(
     val excessChroma: Float,
     val hueInstability: Float,
     val neutralCast: Float,
-    val evaluatedPixels: Int
+    val evaluatedPixels: Int,
+    val severeChromaLoss: Float = 0f
 ) {
     /** Cost in the same general units as the engineering correction score. */
-    val penalty: Float get() = 500f*excessChroma + 90f*hueInstability + 180f*neutralCast
+    val penalty: Float get() = 500f*excessChroma + 90f*hueInstability + 180f*neutralCast +
+        220f*severeChromaLoss
 }
