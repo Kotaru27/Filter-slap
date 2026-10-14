@@ -319,12 +319,12 @@ object OfflineEnhancer {
                 recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
                 else -> "No learned global grade selected; independent measured corrections applied"
             }
-            val outcome=EnhancementOutcome(status,"V9_2_PHOTO_GUARDS",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V9_3_COHERENT_TONE",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V9_2_PHOTO_GUARDS",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V9_3_COHERENT_TONE",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error
