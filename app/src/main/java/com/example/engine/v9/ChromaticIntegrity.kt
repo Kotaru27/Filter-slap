@@ -65,7 +65,7 @@ internal object ChromaticIntegrity {
     }
 }
 
-internal data class ChromaticIntegrityReport(
+data class ChromaticIntegrityReport(
     val sampledPixels:Int,
     val eligiblePixels:Int,
     val severeLossFraction:Float,
