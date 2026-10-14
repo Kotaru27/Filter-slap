@@ -55,10 +55,10 @@ class RealPhotoComparisonTest {
                 val outcome=requireNotNull(result.outcome)
                 // Prevent a ZIP/APK labelled V9.3 from reporting an older runtime
                 // engine. This uses actual rendered output and compiled BuildConfig.
-                assertEquals("V9_3_COHERENT_TONE",outcome.engine)
-                assertEquals("V9_3_COHERENT_TONE",result.appliedPlan.profileName)
-                assertEquals("1.5.3-v9.3-coherent-tone-experimental",BuildConfig.VERSION_NAME)
-                assertEquals(12,BuildConfig.VERSION_CODE)
+                assertEquals("V9_4_SELECTIVE_ILLUMINATION",outcome.engine)
+                assertEquals("V9_4_SELECTIVE_ILLUMINATION",result.appliedPlan.profileName)
+                assertEquals("1.5.4-v9.4-selective-illumination-experimental",BuildConfig.VERSION_NAME)
+                assertEquals(13,BuildConfig.VERSION_CODE)
                 assertTrue("Safety failed for ${file.name}",outcome.damage.safe)
                 assertEquals(original.width,edited.width)
                 assertEquals(original.height,edited.height)
