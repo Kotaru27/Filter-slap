@@ -167,11 +167,16 @@ fun FilterSlapApp() {
                         "AdaptiveColorTone" -> "Adaptive tone with highlight protection"
                         "LocalShadows" -> "Selective subject shadow lift"
                         "Shadows" -> "Global shadow lift"
+                        "Exposure" -> "${decision.regionMask} exposure correction"
+                        "Contrast" -> "${decision.regionMask} contrast correction"
                         else -> null
-                    } }.joinToString(", ").ifEmpty { "Source tone retained" },
-                    colorAdjustments = if (outcome.modelStrength > 0f)
-                        "Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection"
-                        else "Source colors retained"
+                    } }.distinct().joinToString(", ").ifEmpty { "Source tone retained" },
+                    colorAdjustments = buildList {
+                        if (outcome.modelStrength > 0f)
+                            add("Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection")
+                        if (plan.decisions.any { it.parameter == "WhiteBalance" })
+                            add("Neutral-anchor white balance applied")
+                    }.joinToString(", ").ifEmpty { "Source colors retained" }
                 ))
                 withContext(Dispatchers.Main) {
                     if (request == renderRequest && photo == photoRequest) {

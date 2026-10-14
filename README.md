@@ -1,3 +1,9 @@
+## V8 offline candidate-planner beta
+
+Filter Slap V8 adds independent subject/background photographic corrections and compares actual rendered candidates against the original using measured defect-reduction and damage metrics. The existing pretrained image-adaptive LUT and local saliency network are still bundled offline. The original photograph is an eligible no-edit result. [V8 implementation and limitations](README-V8.md).
+
+**Quality caveat:** V8 has not passed a diverse blind aesthetic preference benchmark or on-device acceptance matrix. Android unit tests and signed APK builds confirm engineering integration only.
+
 **V7 offline selective-enhancement beta:** [Implementation](README-V7.md) · [Verification](VALIDATION-V7.md). Bundled color and salient-object models; one recipe for preview and export. Photographic-quality limits are documented.
 
 > **V4 engineering update — NOT AN APK RELEASE.** Read [VALIDATION-V4.md](VALIDATION-V4.md) before attempting to build.
