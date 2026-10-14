@@ -1,5 +1,7 @@
 package com.example.engine.v9
 
+import com.example.engine.v7.EditRecipe
+import com.example.engine.v7.EnhancementMath
 import com.example.engine.v8.CandidatePlanner
 import com.example.engine.v8.CorrectionEvidence
 import com.example.engine.v8.FrameTones
@@ -73,4 +75,21 @@ class SelectiveIlluminationTest {
         assertEquals(0f,f.liftAt(.5f,.5f,.001f,1.35f),0f)
         assertEquals(0f,f.liftAt(.5f,.5f,.84f,1.35f),0f)
     }
+    @Test fun `final RGB renderer honors enhanced bound only for new candidate`() {
+        fun recipe(strength:Float)=EditRecipe(null,null,0f,0f,0f,0f,1f,
+            "quality-study","none",emptyList(),spatialStrength=strength)
+        val source=0xff544d43.toInt()
+        val y=EnhancementMath.luma(source)
+        fun render(strength:Float,lift:Float)=EnhancementMath.edit(source,0f,
+            recipe(strength),y,FloatArray(3),spatialLift=lift)
+        val legacy=render(.85f,.243f)
+        val clippedLegacy=render(.85f,.19f)
+        assertEquals("Old renderer must retain original 0.19 ceiling",clippedLegacy,legacy)
+        val experimental=render(1.3f,.243f)
+        assertTrue("Extended lift failed to reach the final pixels",
+            EnhancementMath.luma(experimental)>EnhancementMath.luma(legacy)+.025f)
+        val unchanged=render(1.3f,0f)
+        assertEquals("New candidate with no spatial lift changed pixels",source,unchanged)
+    }
+
 }
