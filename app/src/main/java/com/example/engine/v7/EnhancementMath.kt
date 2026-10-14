@@ -120,7 +120,11 @@ object EnhancementMath {
         val detail = recipe.detailStrength * detailDifference * detailWeight
         val denoise = -detailDifference * recipe.noiseStrength *
             (1f-EnhancementMath.smooth(.012f,.045f,abs(detailDifference)))
-        val toneDelta = lift + detail + denoise + spatialLift.coerceIn(0f,.19f) +
+        // Preserve V9.3's exact ceiling for all legacy recipes. Only the
+        // separately proposed, scored selective-illumination candidate can
+        // render the higher bounded recovery computed by SpatialIllumination.
+        val maxSpatialLift=if(recipe.spatialStrength>1f) .255f else .19f
+        val toneDelta = lift + detail + denoise + spatialLift.coerceIn(0f,maxSpatialLift) +
             CoherentTone.difference(y,recipe.coherentShadows,recipe.coherentHighlights)
         val gain = if (y > .001f) toneDelta / y else 0f
         dest[0] += r * gain; dest[1] += g * gain; dest[2] += b * gain
