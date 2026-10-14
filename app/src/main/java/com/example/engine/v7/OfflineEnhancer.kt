@@ -16,6 +16,7 @@ import com.example.engine.v8.RegionTones
 import com.example.engine.v8.CandidateAssessment
 import com.example.engine.v9.SpatialIllumination
 import com.example.engine.v9.SpatialQuality
+import com.example.engine.v9.ChromaticIntegrity
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlin.math.abs
@@ -138,9 +139,10 @@ object OfflineEnhancer {
                             val editedPixels=IntArray(sampleW*sampleH)
                             rendered.bitmap.getPixels(editedPixels,0,sampleW,0,0,sampleW,sampleH)
                             val spatialQuality=SpatialQuality.compare(sourcePixels,editedPixels,sampleW,sampleH)
+                            val colorIntegrity=ChromaticIntegrity.assess(sourcePixels,editedPixels)
                             CandidatePlanner.assess(evidence,strategy,after,d.meanChange,
                                 d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted,
-                                beforeNeutral,afterNeutral,spatialQuality)
+                                beforeNeutral,afterNeutral,spatialQuality,colorIntegrity)
                         } finally { rendered.bitmap.recycle() }
                     } catch(cancelled: CancellationException) { throw cancelled }
                     catch(unsafe: UnsafeRenderException) {
@@ -313,12 +315,12 @@ object OfflineEnhancer {
                 recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
                 else -> "No learned global grade selected; independent measured corrections applied"
             }
-            val outcome=EnhancementOutcome(status,"V9_SPATIAL",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V9_2_PHOTO_GUARDS",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V9_SPATIAL",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V9_2_PHOTO_GUARDS",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error
