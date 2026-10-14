@@ -1,6 +1,5 @@
 package com.example.engine.v9
 
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -25,18 +24,19 @@ class SpatialIllumination private constructor(
         val x=px.toInt(); val y=py.toInt()
         val xx=min(x+1,width-1); val yy=min(y+1,height-1)
         val fx=px-x; val fy=py-y
-        val indices=intArrayOf(y*width+x,y*width+xx,yy*width+x,yy*width+xx)
-        val weights=floatArrayOf((1f-fx)*(1f-fy),fx*(1f-fy),(1f-fx)*fy,fx*fy)
-        var mass=0f; var estimate=0f;var reliability=0f
-        for (i in indices.indices) {
-            val k=indices[i]
-            // Joint-range upsampling: do not smear a shadow lift across a
-            // real high-contrast edge, regardless of resolution.
-            val weight=weights[i]/(1f+90f*abs(sourceY-guide[k]).let { it*it })
-            mass+=weight
-            estimate+=weight*base[k]
-            reliability+=weight*confidence[k]
-        }
+        val i0=y*width+x; val i1=y*width+xx
+        val i2=yy*width+x; val i3=yy*width+xx
+        // Hot pixel path: NO per-pixel arrays/collections/closures. The full
+        // resolution renderer invokes this millions of times per photograph.
+        val d0=sourceY-guide[i0]; val d1=sourceY-guide[i1]
+        val d2=sourceY-guide[i2]; val d3=sourceY-guide[i3]
+        val w0=(1f-fx)*(1f-fy)/(1f+90f*d0*d0)
+        val w1=fx*(1f-fy)/(1f+90f*d1*d1)
+        val w2=(1f-fx)*fy/(1f+90f*d2*d2)
+        val w3=fx*fy/(1f+90f*d3*d3)
+        val mass=w0+w1+w2+w3
+        val estimate=w0*base[i0]+w1*base[i1]+w2*base[i2]+w3*base[i3]
+        val reliability=w0*confidence[i0]+w1*confidence[i1]+w2*confidence[i2]+w3*confidence[i3]
         if(mass < 1e-7f) return 0f
         val illum=(estimate/mass).coerceIn(0f,1f)
         val confidenceValue=(reliability/mass).coerceIn(0f,1f)

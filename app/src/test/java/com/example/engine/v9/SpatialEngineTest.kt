@@ -1,6 +1,11 @@
 package com.example.engine.v9
 
 import org.junit.Assert.*
+import com.example.engine.v8.CandidatePlanner
+import com.example.engine.v8.CandidateSettings
+import com.example.engine.v8.CorrectionEvidence
+import com.example.engine.v8.FrameTones
+import com.example.engine.v8.RegionTones
 import org.junit.Test
 import kotlin.math.abs
 
@@ -59,6 +64,28 @@ class SpatialEngineTest {
         assertEquals(0f,q.recoveredShadow,0.00001f)
         assertTrue(q.brightDrift>0.02f)
     }
+    @Test fun `local proposal requires recoverable source signal and does not need a LUT`() {
+        val balanced=FrameTones(RegionTones(.10f,.49f,.86f))
+        val none=CorrectionEvidence(balanced,false,0f,0f,spatialPotential=0f)
+        assertTrue(CandidatePlanner.propose(none,true).all { it.spatialStrength==0f })
+        val textured=CorrectionEvidence(balanced,false,0f,0f,spatialPotential=.27f)
+        val proposals=CandidatePlanner.propose(textured,false)
+        assertTrue(proposals.any { it.name=="Local light recovery" && it.spatialStrength>0f })
+    }
+    @Test fun `spatial benefit beats equally safe sky-only darkening`() {
+        val source=CorrectionEvidence(FrameTones(RegionTones(.08f,.51f,.88f)),false,0f,0f,
+            spatialPotential=.25f)
+        val setting=CandidateSettings("Local light recovery",spatialStrength=.64f)
+        val unchanged=source.before
+        val good=CandidatePlanner.assess(source,setting,unchanged,7f,0f,0f,0f,0f,
+            spatial=SpatialQuality(.075f,0f,0f,0f,14))
+        val skyOnly=CandidatePlanner.assess(source,setting,unchanged,7f,0f,0f,0f,0f,
+            spatial=SpatialQuality(0f,.095f,0f,.012f,14))
+        assertTrue(good.score>0f)
+        assertTrue(skyOnly.score<0f)
+        assertTrue(good.score>skyOnly.score)
+    }
+
     @Test fun `source-defined spatial quality score rejects disappearing texture`() {
         val w=100;val h=100
         val src=IntArray(w*h){i->gray(35+(i%2)*47)}
