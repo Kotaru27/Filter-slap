@@ -174,7 +174,7 @@ object CandidatePlanner {
             }
         }
         // Spatial correction metrics apply to ALL strategies without favoritism.
-        if(spatial!=null && spatial.evidenceTiles>0)
+        if(!e.intentionallyDark && spatial!=null && spatial.evidenceTiles>0)
             correction += 225f*spatial.recoveredShadow
         val spatialCost=if(spatial!=null)
             185f*spatial.brightDrift + 280f*spatial.detailLoss + 160f*spatial.haloRisk else 0f
