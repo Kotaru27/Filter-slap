@@ -32,7 +32,14 @@ jobs:
           python research/v7/prepare_assets.py --output-dir app/src/main/assets
       - name: Prepare Gradle wrapper
         run: chmod +x gradlew
+      - name: Prepare public-domain real-photo inputs for review
+        run: |
+          python -m pip install 'scikit-image==0.25.2'
+          python research/quality/prepare_public_photos.py --output-dir app/build/public-photo-input
       - name: Run full Android unit tests (required; failures block APK)
+        env:
+          PHOTO_COMPARE_INPUT: app/build/public-photo-input
+          PHOTO_COMPARE_OUTPUT: app/build/public-photo-pairs
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -50,6 +57,13 @@ jobs:
           name: unit-test-reports
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
+      - name: Upload before-after photo comparisons for human review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V9-2-quality-EXPERIMENTAL-CC0-photo-comparisons-NOT-QUALITY-VERIFIED
+          path: app/build/public-photo-pairs/
+          if-no-files-found: warn
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
