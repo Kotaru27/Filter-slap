@@ -41,6 +41,8 @@ jobs:
           name: V9-synthetic-baseline-metrics-NOT-PHOTO-QUALITY
           path: app/build/v9-independent-audit/synthetic-metrics.csv
           if-no-files-found: warn
+      - name: Print synthetic audit metrics for independent review
+        run: cat app/build/v9-independent-audit/synthetic-metrics.csv
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
