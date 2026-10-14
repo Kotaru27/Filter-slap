@@ -120,9 +120,13 @@ object OfflineEnhancer {
                     // Detail and denoise are proposed only alongside a measurable
                     // correction; they cannot turn a neutral no-edit into an edit.
                     val active=!strategy.isNeutral
+                    // Avoid sharpening noisy shadow texture at the same time as
+                    // a higher-strength local lighting recovery. All legacy
+                    // candidates retain their exact original detail strengths.
+                    val detailScale=if(strategy.spatialStrength>1f) .25f else 1f
                     val trial=EditRecipe(lut,mask,
                         strategy.lutStrength*noiseAttenuation,0f,0f,
-                        if(active) detail else 0f,
+                        if(active) detail*detailScale else 0f,
                         input.width.toFloat()/input.height,id,fingerprint,notes,
                         if(active) denoise else 0f,
                         strategy.exposureEv,strategy.subjectEv,strategy.backgroundEv,
@@ -319,12 +323,12 @@ object OfflineEnhancer {
                 recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
                 else -> "No learned global grade selected; independent measured corrections applied"
             }
-            val outcome=EnhancementOutcome(status,"V9_3_COHERENT_TONE",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V9_4_SELECTIVE_ILLUMINATION",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V9_3_COHERENT_TONE",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V9_4_SELECTIVE_ILLUMINATION",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error
