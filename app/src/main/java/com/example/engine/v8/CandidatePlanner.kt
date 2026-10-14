@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import com.example.engine.v9.SpatialQuality
+import com.example.engine.v10.ColorAssessment
 
 /**
  * Photographic *correction* planner, not an aesthetic quality predictor.
@@ -152,7 +153,8 @@ object CandidatePlanner {
                meanChange: Float, newlyClipped: Float, newlyCrushed: Float,
                hueShifted: Float, vividBoosted: Float,
                neutralErrorBefore: Float = 0f, neutralErrorAfter: Float = 0f,
-               spatial: SpatialQuality? = null): CandidateAssessment {
+               spatial: SpatialQuality? = null,
+               color: ColorAssessment? = null): CandidateAssessment {
         val valid = meanChange.isFinite() && meanChange <= 38f &&
             newlyClipped <= .003f && newlyCrushed <= .003f &&
             hueShifted <= .035f && vividBoosted <= .035f
@@ -177,11 +179,13 @@ object CandidatePlanner {
         val spatialCost=if(spatial!=null)
             185f*spatial.brightDrift + 280f*spatial.detailLoss + 160f*spatial.haloRisk else 0f
         // Changing more pixels is a cost, never a source of benefit.
+        val perceptualColorCost=color?.penalty ?: 0f
         val cost = meanChange * .13f + newlyClipped*3000f + newlyCrushed*3000f +
-            hueShifted*200f + vividBoosted*120f + spatialCost
+            hueShifted*200f + vividBoosted*120f + spatialCost + perceptualColorCost
         val score = correction - cost
         return CandidateAssessment(settings,score,
-            "Defect improvement %.2f minus change/artifact cost %.2f".format(correction,cost),
+            "Defect improvement %.2f minus change/artifact cost %.2f; perceptual color cost %.2f; mean chroma drift %.4f".format(
+                correction,cost,perceptualColorCost,color?.meanChromaDelta ?: 0f),
             meanChange,true)
     }
 

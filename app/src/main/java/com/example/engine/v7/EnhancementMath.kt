@@ -6,6 +6,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.pow
+import com.example.engine.v10.ColorFidelity
 
 /** Pure pixel operations shared by Android rendering and host regression tests. */
 object EnhancementMath {
@@ -122,6 +123,12 @@ object EnhancementMath {
         val toneDelta = lift + detail + denoise + spatialLift.coerceIn(0f,.19f)
         val gain = if (y > .001f) toneDelta / y else 0f
         dest[0] += r * gain; dest[1] += g * gain; dest[2] += b * gain
+        // Tone-only corrections must not unintentionally recolor materials.
+        // Use source hue/chroma in linear sRGB while retaining candidate lightness.
+        // Intentional color-model and white-balance decisions remain separate.
+        if(recipe.modelStrength == 0f && recipe.redGain == 1f &&
+            recipe.greenGain == 1f && recipe.blueGain == 1f)
+            ColorFidelity.stabilizeToneOnly(r,g,b,dest)
         boundedDelta(r, g, b, dest)
         val rr = (dest[0]*255f + .5f).toInt().coerceIn(0,255)
         val gg = (dest[1]*255f + .5f).toInt().coerceIn(0,255)
