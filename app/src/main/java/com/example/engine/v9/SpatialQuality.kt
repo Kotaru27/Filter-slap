@@ -23,7 +23,7 @@ data class SpatialQuality(
             val cellsX=min(12,max(1,width/12))
             val cellsY=min(12,max(1,height/12))
             var recovered=0f;var drift=0f;var lost=0f;var halo=0f
-            var shadows=0;var bright=0;var pairs=0
+            var shadows=0;var bright=0;var protectedBrightTiles=0;var pairs=0
             val originalMeans=FloatArray(cellsX*cellsY)
             val editedMeans=FloatArray(cellsX*cellsY)
             val shadowWeights=FloatArray(cellsX*cellsY)
@@ -62,6 +62,14 @@ data class SpatialQuality(
                     drift+=max(0f,abs(after-before)-.025f)
                     bright++
                 }
+                // Highlight texture can vanish without a clipped pixel or a
+                // change in mean brightness. Treat that as damage, too.
+                // Source-defined variance is used, not an object or scene label.
+                if(before in .56f.. .94f && stdBefore>.022f){
+                    val reliability=(stdBefore/(stdBefore+.04f)).coerceIn(0f,1f)
+                    lost+=max(0f,stdBefore*.80f-stdAfter)*reliability
+                    protectedBrightTiles++
+                }
             }
             // Excess discontinuity added by the edit across source-defined tile boundaries.
             for(y in 0 until cellsY)for(x in 0 until cellsX){
@@ -84,7 +92,7 @@ data class SpatialQuality(
             return SpatialQuality(
                 if(shadows>0)recovered/shadows else 0f,
                 if(bright>0)drift/bright else 0f,
-                if(shadows>0)lost/shadows else 0f,
+                if(shadows+protectedBrightTiles>0)lost/(shadows+protectedBrightTiles) else 0f,
                 if(pairs>0)halo/pairs else 0f,
                 shadows
             )
