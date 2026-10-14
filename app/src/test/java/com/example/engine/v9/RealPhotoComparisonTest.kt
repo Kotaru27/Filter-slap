@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.test.core.app.ApplicationProvider
+import com.example.BuildConfig
 import com.example.engine.ImageAnalyzer
 import com.example.engine.v7.OfflineEnhancer
 import org.junit.Assert.*
@@ -52,6 +53,12 @@ class RealPhotoComparisonTest {
                 val result=OfflineEnhancer.process(context,original,analysis)
                 edited=result.bitmap
                 val outcome=requireNotNull(result.outcome)
+                // Prevent a ZIP/APK labelled V9.3 from reporting an older runtime
+                // engine. This uses actual rendered output and compiled BuildConfig.
+                assertEquals("V9_3_COHERENT_TONE",outcome.engine)
+                assertEquals("V9_3_COHERENT_TONE",result.appliedPlan.profileName)
+                assertEquals("1.5.3-v9.3-coherent-tone-experimental",BuildConfig.VERSION_NAME)
+                assertEquals(12,BuildConfig.VERSION_CODE)
                 assertTrue("Safety failed for ${file.name}",outcome.damage.safe)
                 assertEquals(original.width,edited.width)
                 assertEquals(original.height,edited.height)

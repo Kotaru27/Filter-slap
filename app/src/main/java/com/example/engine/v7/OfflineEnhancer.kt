@@ -128,7 +128,8 @@ object OfflineEnhancer {
                         strategy.exposureEv,strategy.subjectEv,strategy.backgroundEv,
                         strategy.contrast,strategy.subjectContrast,
                         strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name,
-                        strategy.backgroundContrast,strategy.spatialStrength,nativeNoise)
+                        strategy.backgroundContrast,strategy.spatialStrength,nativeNoise,
+                        strategy.coherentShadows,strategy.coherentHighlights)
                     candidates+=trial
                     val evaluation=try {
                         val rendered=render(sample,trial,analysis,checkCancelled)
@@ -162,7 +163,8 @@ object OfflineEnhancer {
                     notes+diagnostics+"Selected editing strategy: ${selected.candidate.name}",
                     chosen.noiseStrength,chosen.exposureEv,chosen.subjectEv,chosen.backgroundEv,
                     chosen.contrast,chosen.subjectContrast,chosen.redGain,chosen.greenGain,chosen.blueGain,
-                    chosen.strategy,chosen.backgroundContrast,chosen.spatialStrength,chosen.noiseLevels)
+                    chosen.strategy,chosen.backgroundContrast,chosen.spatialStrength,chosen.noiseLevels,
+                    chosen.coherentShadows,chosen.coherentHighlights)
             } finally { if(sample !== canonical) sample.recycle() }
         } finally { if(canonical !== input) canonical.recycle() }
     }
@@ -297,6 +299,8 @@ object OfflineEnhancer {
             decision("Contrast","Subject",abs(recipe.subjectContrast))
             decision("Contrast","Background",abs(recipe.backgroundContrast))
             decision("LocalToneRecovery","Spatial",recipe.spatialStrength)
+            decision("Shadows","Global",recipe.coherentShadows)
+            decision("Highlights","Global",recipe.coherentHighlights)
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
                 decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
@@ -315,12 +319,12 @@ object OfflineEnhancer {
                 recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
                 else -> "No learned global grade selected; independent measured corrections applied"
             }
-            val outcome=EnhancementOutcome(status,"V9_2_PHOTO_GUARDS",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V9_3_COHERENT_TONE",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V9_2_PHOTO_GUARDS",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V9_3_COHERENT_TONE",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error

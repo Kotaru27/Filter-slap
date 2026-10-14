@@ -34,11 +34,14 @@ data class CandidateSettings(
     val greenGain: Float = 1f,
     val blueGain: Float = 1f,
     val backgroundContrast: Float = 0f,
-    val spatialStrength: Float = 0f
+    val spatialStrength: Float = 0f,
+    val coherentShadows: Float = 0f,
+    val coherentHighlights: Float = 0f
 ) {
     val isNeutral get() = lutStrength == 0f && exposureEv == 0f && subjectEv == 0f &&
         backgroundEv == 0f && contrast == 0f && subjectContrast == 0f &&
         backgroundContrast == 0f && spatialStrength == 0f &&
+        coherentShadows == 0f && coherentHighlights == 0f &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
 }
 
@@ -123,6 +126,15 @@ object CandidatePlanner {
                 wb=(mean/anchors[2]).coerceIn(.86f,1.14f)
             }
         }
+        // Source-derived tonal proposal: midtone-safe, minimal roll-off.
+        // Scene-independent calculations: no class, subject label or test photograph.
+        val strongLightingContrast=b.whole.p90>.90f && b.whole.p10<.35f
+        val lowMidtone=!dark && b.whole.median<.32f && b.whole.p90<.88f
+        val coherentShadows=if(!dark && b.whole.p10<.16f &&
+            (strongLightingContrast || lowMidtone))
+            ((.16f-b.whole.p10)*2.2f).coerceIn(0f,.30f) else 0f
+        val coherentHighlights=if(strongLightingContrast)
+            ((b.whole.p90-.90f)*2.1f).coerceIn(0f,.25f) else 0f
         val result=mutableListOf(CandidateSettings("Original"))
         if (hasLut) {
             result += CandidateSettings("Learned grade",lutStrength=.85f)
@@ -133,6 +145,10 @@ object CandidatePlanner {
         result += CandidateSettings("Photographic correction",exposureEv=lift+lower,
             subjectEv=sEv,backgroundEv=bEv,contrast=contrast,redGain=wr,greenGain=wg,blueGain=wb,
             backgroundContrast=backgroundContrast)
+        if(coherentShadows>0f || coherentHighlights>0f)
+            result += CandidateSettings("Coherent tonal balance",
+                coherentShadows=coherentShadows,coherentHighlights=coherentHighlights,
+                subjectEv=(sEv*.45f).coerceIn(0f,.3f))
         if (sEv != 0f || bEv != 0f || backgroundContrast != 0f)
             result += CandidateSettings("Independent regions",subjectEv=sEv,backgroundEv=bEv,
                 subjectContrast=if (sEv != 0f && s != null && s.range < .31f) .13f else 0f,
@@ -165,6 +181,13 @@ object CandidatePlanner {
             return CandidateAssessment(settings,Float.NEGATIVE_INFINITY,
                 "Widespread loss of source color",meanChange,false)
         var correction = deficit(e,e.before) - deficit(e,after)
+        // Legacy candidate rankings are not reweighted. Only the new
+        // optional shoulder-curve proposal receives a bounded reward for
+        // reducing excessive source highlights, with source evidence.
+        if (settings.coherentHighlights>0f && e.before.whole.p90>.90f &&
+            e.before.whole.p10<.35f)
+            correction += 40f*(e.before.whole.p90-after.whole.p90)
+                .coerceIn(0f,.06f)
         val anchors = e.neutralRgb
         if (anchors != null && anchors.size == 3 && anchors.all { it.isFinite() && it > 15f } &&
             e.neutralCoverage >= .008f && e.neutralDisagreement < .07f) {
