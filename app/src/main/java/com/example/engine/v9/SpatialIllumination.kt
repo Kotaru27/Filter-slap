@@ -43,8 +43,14 @@ class SpatialIllumination private constructor(
         val darkness=((.42f-illum)/.37f).coerceIn(0f,1f)
         val signal=smooth(.015f,.060f,sourceY)
         val brightProtection=1f-smooth(.44f,.70f,sourceY)
-        val midShadowLift=.19f*strength.coerceIn(0f,1f)*darkness*signal*brightProtection*confidenceValue
-        return midShadowLift.coerceIn(0f,.19f)
+        // Strength <= 1 retains V9's exact legacy response. Higher strengths
+        // are available ONLY to separately scored high-dynamic-range proposals.
+        // Bound both amplitude and source-aware confidence, protecting dark
+        // noise, bright surfaces and local illumination edges.
+        val maxLift=if(strength>1f) .255f else .19f
+        val midShadowLift=.19f*strength.coerceIn(0f,1.35f)*
+            darkness*signal*brightProtection*confidenceValue
+        return midShadowLift.coerceIn(0f,maxLift)
     }
 
     companion object {
