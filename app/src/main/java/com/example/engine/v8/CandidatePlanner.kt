@@ -128,10 +128,13 @@ object CandidatePlanner {
         }
         // Source-derived tonal proposal: midtone-safe, minimal roll-off.
         // Scene-independent calculations: no class, subject label or test photograph.
-        val coherentShadows=if(!dark && b.whole.median>.24f && b.whole.p10<.16f)
+        val strongLightingContrast=b.whole.p90>.90f && b.whole.p10<.35f
+        val lowMidtone=!dark && b.whole.median<.32f && b.whole.p90<.88f
+        val coherentShadows=if(!dark && b.whole.p10<.16f &&
+            (strongLightingContrast || lowMidtone))
             ((.16f-b.whole.p10)*2.2f).coerceIn(0f,.30f) else 0f
-        val coherentHighlights=if(b.whole.p90>.86f && b.whole.p10<.40f)
-            ((b.whole.p90-.86f)*2.1f).coerceIn(0f,.25f) else 0f
+        val coherentHighlights=if(strongLightingContrast)
+            ((b.whole.p90-.90f)*2.1f).coerceIn(0f,.25f) else 0f
         val result=mutableListOf(CandidateSettings("Original"))
         if (hasLut) {
             result += CandidateSettings("Learned grade",lutStrength=.85f)
