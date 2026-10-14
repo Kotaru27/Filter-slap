@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import com.example.engine.v9.SpatialQuality
+import com.example.engine.v9.ChromaticIntegrityReport
 
 /**
  * Photographic *correction* planner, not an aesthetic quality predictor.
@@ -136,7 +137,7 @@ object CandidatePlanner {
             result += CandidateSettings("Independent regions",subjectEv=sEv,backgroundEv=bEv,
                 subjectContrast=if (sEv != 0f && s != null && s.range < .31f) .13f else 0f,
                 backgroundContrast=backgroundContrast)
-        if (e.spatialPotential > .025f) {
+        if (!dark && e.spatialPotential > .025f) {
             val strength=(.48f+.52f*e.spatialPotential).coerceIn(.48f,.92f)
             result += CandidateSettings("Local light recovery",spatialStrength=strength)
             result += CandidateSettings("Local balanced correction",spatialStrength=strength,
@@ -152,13 +153,17 @@ object CandidatePlanner {
                meanChange: Float, newlyClipped: Float, newlyCrushed: Float,
                hueShifted: Float, vividBoosted: Float,
                neutralErrorBefore: Float = 0f, neutralErrorAfter: Float = 0f,
-               spatial: SpatialQuality? = null): CandidateAssessment {
+               spatial: SpatialQuality? = null,
+               chromatic: ChromaticIntegrityReport? = null): CandidateAssessment {
         val valid = meanChange.isFinite() && meanChange <= 38f &&
             newlyClipped <= .003f && newlyCrushed <= .003f &&
             hueShifted <= .035f && vividBoosted <= .035f
         if (!valid) return CandidateAssessment(settings,Float.NEGATIVE_INFINITY,
             "Output damage limit exceeded",meanChange,false)
         if (settings.isNeutral) return CandidateAssessment(settings,0f,"Original preserved",0f,true)
+        if (chromatic?.widespreadDamage==true)
+            return CandidateAssessment(settings,Float.NEGATIVE_INFINITY,
+                "Widespread loss of source color",meanChange,false)
         var correction = deficit(e,e.before) - deficit(e,after)
         val anchors = e.neutralRgb
         if (anchors != null && anchors.size == 3 && anchors.all { it.isFinite() && it > 15f } &&
@@ -172,7 +177,7 @@ object CandidatePlanner {
             }
         }
         // Spatial correction metrics apply to ALL strategies without favoritism.
-        if(spatial!=null && spatial.evidenceTiles>0)
+        if(!e.intentionallyDark && spatial!=null && spatial.evidenceTiles>0)
             correction += 225f*spatial.recoveredShadow
         val spatialCost=if(spatial!=null)
             185f*spatial.brightDrift + 280f*spatial.detailLoss + 160f*spatial.haloRisk else 0f
