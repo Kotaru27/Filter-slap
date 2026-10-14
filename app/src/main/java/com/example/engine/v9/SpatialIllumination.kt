@@ -1,1 +1,113 @@
-No readable content was found in this file for the requested mode.
+package com.example.engine.v9
+
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+
+/**
+ * Small, native-resolution-independent, edge-aware illumination proposal.
+ * Uses a self-guided (gray-level) guided filter on a bounded preview. It has
+ * no category/scene/object/location branch. The field is rebuilt from the
+ * source for export; no edited pixels or sample image are stored in a recipe.
+ */
+class SpatialIllumination private constructor(
+    private val width: Int,
+    private val height: Int,
+    private val guide: FloatArray,
+    private val base: FloatArray,
+    private val confidence: FloatArray,
+    val recoverableFraction: Float
+) {
+    fun liftAt(u: Float, v: Float, sourceY: Float, strength: Float): Float {
+        if (strength <= 0f || sourceY <= .008f || sourceY >= .70f) return 0f
+        val px=(u*width-.5f).coerceIn(0f,(width-1).toFloat())
+        val py=(v*height-.5f).coerceIn(0f,(height-1).toFloat())
+        val x=px.toInt(); val y=py.toInt()
+        val xx=min(x+1,width-1); val yy=min(y+1,height-1)
+        val fx=px-x; val fy=py-y
+        val indices=intArrayOf(y*width+x,y*width+xx,yy*width+x,yy*width+xx)
+        val weights=floatArrayOf((1f-fx)*(1f-fy),fx*(1f-fy),(1f-fx)*fy,fx*fy)
+        var mass=0f; var estimate=0f;var reliability=0f
+        for (i in indices.indices) {
+            val k=indices[i]
+            // Joint-range upsampling: do not smear a shadow lift across a
+            // real high-contrast edge, regardless of resolution.
+            val weight=weights[i]/(1f+90f*abs(sourceY-guide[k]).let { it*it })
+            mass+=weight
+            estimate+=weight*base[k]
+            reliability+=weight*confidence[k]
+        }
+        if(mass < 1e-7f) return 0f
+        val illum=(estimate/mass).coerceIn(0f,1f)
+        val confidenceValue=(reliability/mass).coerceIn(0f,1f)
+        val darkness=((.42f-illum)/.37f).coerceIn(0f,1f)
+        val signal=smooth(.015f,.060f,sourceY)
+        val brightProtection=1f-smooth(.44f,.70f,sourceY)
+        val midShadowLift=.19f*strength.coerceIn(0f,1f)*darkness*signal*brightProtection*confidenceValue
+        return midShadowLift.coerceIn(0f,.19f)
+    }
+
+    companion object {
+        fun build(pixels: IntArray,width: Int,height: Int,noiseLevels: Float=1f): SpatialIllumination {
+            require(width > 0 && height > 0 && pixels.size==width*height)
+            val n=pixels.size
+            val input=FloatArray(n) { i -> luma(pixels[i]) }
+            val radius=(min(width,height)/26).coerceIn(2,12)
+            val mean=boxMean(input,width,height,radius)
+            val square=FloatArray(n){ i->input[i]*input[i] }
+            val meanSquare=boxMean(square,width,height,radius)
+            // A guided filter follows strong illumination edges, rather than
+            // using a blurred mask that makes bright halos around dark objects.
+            val eps=.0028f
+            val a=FloatArray(n)
+            val b=FloatArray(n)
+            for(i in 0 until n){
+                val variance=max(0f,meanSquare[i]-mean[i]*mean[i])
+                a[i]=variance/(variance+eps)
+                b[i]=mean[i]-a[i]*mean[i]
+            }
+            val meanA=boxMean(a,width,height,radius)
+            val meanB=boxMean(b,width,height,radius)
+            val smoothBase=FloatArray(n)
+            val confidence=FloatArray(n)
+            val noiseFloor=.00045f+noiseLevels.coerceIn(0f,9f)*.00009f
+            var recoverable=0
+            for(i in 0 until n){
+                smoothBase[i]=(meanA[i]*input[i]+meanB[i]).coerceIn(0f,1f)
+                val variance=max(0f,meanSquare[i]-mean[i]*mean[i])
+                confidence[i]=(variance/(variance+noiseFloor)).coerceIn(0f,1f)
+                if(smoothBase[i]<.36f && input[i]>.035f && variance>.001f && confidence[i]>.18f) recoverable++
+            }
+            return SpatialIllumination(width,height,input,smoothBase,confidence,recoverable.toFloat()/n)
+        }
+        private fun smooth(a:Float,b:Float,x:Float):Float {
+            val t=((x-a)/(b-a)).coerceIn(0f,1f)
+            return t*t*(3f-2f*t)
+        }
+        private fun luma(pixel:Int):Float =
+            ((pixel ushr 16 and 255)*.2126f+(pixel ushr 8 and 255)*.7152f+(pixel and 255)*.0722f)/255f
+        /** Integral-image box filter in O(width*height), even for large radii. */
+        private fun boxMean(values:FloatArray,width:Int,height:Int,radius:Int):FloatArray {
+            val stride=width+1
+            val sums=DoubleArray(stride*(height+1))
+            for(y in 0 until height){
+                var rowSum=0.0
+                for(x in 0 until width){
+                    rowSum+=values[y*width+x]
+                    sums[(y+1)*stride+x+1]=sums[y*stride+x+1]+rowSum
+                }
+            }
+            val output=FloatArray(values.size)
+            for(y in 0 until height){
+                val y0=max(0,y-radius);val y1=min(height-1,y+radius)
+                for(x in 0 until width){
+                    val x0=max(0,x-radius);val x1=min(width-1,x+radius)
+                    val sum=sums[(y1+1)*stride+x1+1]-sums[y0*stride+x1+1]-
+                        sums[(y1+1)*stride+x0]+sums[y0*stride+x0]
+                    output[y*width+x]=(sum/((x1-x0+1)*(y1-y0+1))).toFloat()
+                }
+            }
+            return output
+        }
+    }
+}
