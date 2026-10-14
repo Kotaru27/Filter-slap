@@ -93,4 +93,15 @@ class SpatialEngineTest {
         val q=SpatialQuality.compare(src,flat,w,h)
         assertTrue(q.detailLoss>0f)
     }
+    @Test fun `bright detail flattening is damage even at identical average brightness`() {
+        val width=96; val height=96
+        val original=IntArray(width*height){i -> gray(if(i%2==0) 175 else 215) }
+        val flattened=IntArray(width*height){gray(195)}
+        val assessment=SpatialQuality.compare(original,flattened,width,height)
+        assertTrue("Missing highlight-texture loss guard",assessment.detailLoss>.01f)
+        assertEquals("Average brightness must remain stable",0f,assessment.brightDrift,.0001f)
+        assertEquals(0f,assessment.recoveredShadow,.0001f)
+    }
+
+
 }
