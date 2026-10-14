@@ -53,6 +53,6 @@ jobs:
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V7-selective-offline-debug-CANDIDATE
+          name: FilterSlap-V8-candidate-planner-debug-UNVERIFIED-QUALITY
           path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           if-no-files-found: error
