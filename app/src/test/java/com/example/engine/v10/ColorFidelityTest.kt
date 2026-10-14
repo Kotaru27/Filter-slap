@@ -53,4 +53,21 @@ class ColorFidelityTest {
         val unchanged=IntArray(128){i-> -0x1000000 or (((i*7)%256) shl 16) or (((i*17)%256) shl 8) or ((i*97)%256)}
         assertEquals(0f,ColorFidelity.evaluate(unchanged,unchanged).meanChromaDelta,.000001f)
     }
+    @Test fun severeDesaturationIsNotMistakenForColorFidelity() {
+        val colorful=IntArray(256) { i ->
+            val r=120+(i%8)*4; val g=85+(i%8)*2; val b=40+(i%8)*2
+            -0x1000000 or (r shl 16) or (g shl 8) or b
+        }
+        val gray=IntArray(colorful.size){i->
+            val p=colorful[i]
+            val v=((p ushr 16 and 255)+(p ushr 8 and 255)+(p and 255))/3
+            -0x1000000 or (v shl 16) or (v shl 8) or v
+        }
+        val assessment=ColorFidelity.evaluate(colorful,gray,1)
+        assertTrue(assessment.severeChromaLoss>0f)
+        assertTrue("Severe chroma loss was not scored",assessment.penalty>0f)
+        assertEquals(0f,ColorFidelity.evaluate(colorful,colorful,1).severeChromaLoss,0f)
+    }
+
+
 }
