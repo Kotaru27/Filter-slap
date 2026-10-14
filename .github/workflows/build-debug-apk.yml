@@ -56,6 +56,14 @@ jobs:
           APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
+      - name: Verify installed APK version and give APK an unambiguous name
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          BADGING="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")"
+          echo "$BADGING" | grep -F "versionCode='12'"
+          echo "$BADGING" | grep -F "versionName='1.5.3-v9.3-coherent-tone-experimental'"
+          cp "$APK" app/build/outputs/apk/debug/FilterSlap-V9.3-experimental.apk
       - name: Upload test reports for review
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,6 +81,6 @@ jobs:
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V9-3-coherent-tone-EXPERIMENTAL-NOT-RELEASE
-          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          name: FilterSlap-V9.3-version-corrected-EXPERIMENTAL
+          path: app/build/outputs/apk/debug/FilterSlap-V9.3-experimental.apk
           if-no-files-found: error
