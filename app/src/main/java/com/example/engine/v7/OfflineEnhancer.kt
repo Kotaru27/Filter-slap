@@ -14,6 +14,8 @@ import com.example.engine.v8.CorrectionEvidence
 import com.example.engine.v8.FrameTones
 import com.example.engine.v8.RegionTones
 import com.example.engine.v8.CandidateAssessment
+import com.example.engine.v9.SpatialIllumination
+import com.example.engine.v9.SpatialQuality
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlin.math.abs
@@ -101,10 +103,14 @@ object OfflineEnhancer {
             val sample=Bitmap.createScaledBitmap(canonical,sampleW,sampleH,true)
             try {
                 val before=measureTones(sample,mask,checkCancelled)
+                val sourcePixels=IntArray(sampleW*sampleH)
+                sample.getPixels(sourcePixels,0,sampleW,0,0,sampleW,sampleH)
+                val localEvidence=SpatialIllumination.build(sourcePixels,sampleW,sampleH,nativeNoise)
                 val beforeNeutral=measureNeutralError(sample,sample,checkCancelled)
                 val na=analysis.neutralAnchors
                 val evidence=CorrectionEvidence(before,intentionalDark,na.coverage,
-                    na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB))
+                    na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB),
+                    localEvidence.recoverableFraction)
                 val proposals=CandidatePlanner.propose(evidence,lut!=null)
                 val assessments=mutableListOf<CandidateAssessment>()
                 val candidates=mutableListOf<EditRecipe>()
@@ -121,7 +127,7 @@ object OfflineEnhancer {
                         strategy.exposureEv,strategy.subjectEv,strategy.backgroundEv,
                         strategy.contrast,strategy.subjectContrast,
                         strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name,
-                        strategy.backgroundContrast)
+                        strategy.backgroundContrast,strategy.spatialStrength,nativeNoise)
                     candidates+=trial
                     val evaluation=try {
                         val rendered=render(sample,trial,analysis,checkCancelled)
@@ -129,9 +135,12 @@ object OfflineEnhancer {
                             val after=measureTones(rendered.bitmap,mask,checkCancelled)
                             val d=rendered.outcome!!.damage
                             val afterNeutral=measureNeutralError(sample,rendered.bitmap,checkCancelled)
+                            val editedPixels=IntArray(sampleW*sampleH)
+                            rendered.bitmap.getPixels(editedPixels,0,sampleW,0,0,sampleW,sampleH)
+                            val spatialQuality=SpatialQuality.compare(sourcePixels,editedPixels,sampleW,sampleH)
                             CandidatePlanner.assess(evidence,strategy,after,d.meanChange,
                                 d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted,
-                                beforeNeutral,afterNeutral)
+                                beforeNeutral,afterNeutral,spatialQuality)
                         } finally { rendered.bitmap.recycle() }
                     } catch(cancelled: CancellationException) { throw cancelled }
                     catch(unsafe: UnsafeRenderException) {
@@ -151,7 +160,7 @@ object OfflineEnhancer {
                     notes+diagnostics+"Selected editing strategy: ${selected.candidate.name}",
                     chosen.noiseStrength,chosen.exposureEv,chosen.subjectEv,chosen.backgroundEv,
                     chosen.contrast,chosen.subjectContrast,chosen.redGain,chosen.greenGain,chosen.blueGain,
-                    chosen.strategy,chosen.backgroundContrast)
+                    chosen.strategy,chosen.backgroundContrast,chosen.spatialStrength,chosen.noiseLevels)
             } finally { if(sample !== canonical) sample.recycle() }
         } finally { if(canonical !== input) canonical.recycle() }
     }
@@ -236,6 +245,17 @@ object OfflineEnhancer {
         val source=IntArray(width);val top=IntArray(width);val bottom=IntArray(width);val dest=IntArray(width)
         val rgb=FloatArray(3)
         val damage=DamageAccumulator()
+        val illumination=if(recipe.spatialStrength>0f) {
+            val sc=min(1f,320f/max(width,height))
+            val sw=max(1,(width*sc+.5f).toInt())
+            val sh=max(1,(height*sc+.5f).toInt())
+            val small=Bitmap.createScaledBitmap(input,sw,sh,true)
+            try {
+                val pix=IntArray(sw*sh)
+                small.getPixels(pix,0,sw,0,0,sw,sh)
+                SpatialIllumination.build(pix,sw,sh,recipe.noiseLevels)
+            } finally { if(small!==input)small.recycle() }
+        } else null
         val radius=(max(width,height)/1600f+.5f).toInt().coerceIn(1,3)
         try {
             for(y in 0 until height) {
@@ -254,7 +274,9 @@ object OfflineEnhancer {
                             EnhancementMath.luma(source[left])+EnhancementMath.luma(source[x])+EnhancementMath.luma(source[right])+
                             EnhancementMath.luma(bottom[left])+EnhancementMath.luma(bottom[x])+EnhancementMath.luma(bottom[right]))/9f
                     }
-                    dest[x]=EnhancementMath.edit(source[x],foreground,recipe,neighbourhood,rgb)
+                    val spatialLift=illumination?.liftAt((x+.5f)/width,(y+.5f)/height,
+                        EnhancementMath.luma(source[x]),recipe.spatialStrength) ?: 0f
+                    dest[x]=EnhancementMath.edit(source[x],foreground,recipe,neighbourhood,rgb,spatialLift)
                     damage.add(source[x],dest[x])
                 }
                 output?.setPixels(dest,0,width,0,y,width,1)
@@ -272,6 +294,7 @@ object OfflineEnhancer {
             decision("Contrast","Global",abs(recipe.contrast))
             decision("Contrast","Subject",abs(recipe.subjectContrast))
             decision("Contrast","Background",abs(recipe.backgroundContrast))
+            decision("LocalToneRecovery","Spatial",recipe.spatialStrength)
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
                 decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
@@ -290,12 +313,12 @@ object OfflineEnhancer {
                 recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
                 else -> "No learned global grade selected; independent measured corrections applied"
             }
-            val outcome=EnhancementOutcome(status,"V8_AUTO_EDITOR",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V9_SPATIAL",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V8_AUTO_EDITOR",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V9_SPATIAL",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error

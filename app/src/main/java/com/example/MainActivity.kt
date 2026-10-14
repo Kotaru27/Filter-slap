@@ -169,6 +169,7 @@ fun FilterSlapApp() {
                         "Shadows" -> "Global shadow lift"
                         "Exposure" -> "${decision.regionMask} exposure correction"
                         "Contrast" -> "${decision.regionMask} contrast correction"
+                        "LocalToneRecovery" -> "Spatial shadow and local-light recovery"
                         else -> null
                     } }.distinct().joinToString(", ").ifEmpty { "Source tone retained" },
                     colorAdjustments = buildList {

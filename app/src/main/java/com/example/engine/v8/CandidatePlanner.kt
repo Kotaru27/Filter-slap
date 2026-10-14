@@ -3,6 +3,7 @@ package com.example.engine.v8
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import com.example.engine.v9.SpatialQuality
 
 /**
  * Photographic *correction* planner, not an aesthetic quality predictor.
@@ -31,11 +32,12 @@ data class CandidateSettings(
     val redGain: Float = 1f,
     val greenGain: Float = 1f,
     val blueGain: Float = 1f,
-    val backgroundContrast: Float = 0f
+    val backgroundContrast: Float = 0f,
+    val spatialStrength: Float = 0f
 ) {
     val isNeutral get() = lutStrength == 0f && exposureEv == 0f && subjectEv == 0f &&
         backgroundEv == 0f && contrast == 0f && subjectContrast == 0f &&
-        backgroundContrast == 0f &&
+        backgroundContrast == 0f && spatialStrength == 0f &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
 }
 
@@ -44,7 +46,8 @@ data class CorrectionEvidence(
     val intentionallyDark: Boolean,
     val neutralCoverage: Float,
     val neutralDisagreement: Float,
-    val neutralRgb: FloatArray? = null
+    val neutralRgb: FloatArray? = null,
+    val spatialPotential: Float = 0f
 )
 
 data class CandidateAssessment(
@@ -133,13 +136,23 @@ object CandidatePlanner {
             result += CandidateSettings("Independent regions",subjectEv=sEv,backgroundEv=bEv,
                 subjectContrast=if (sEv != 0f && s != null && s.range < .31f) .13f else 0f,
                 backgroundContrast=backgroundContrast)
+        if (e.spatialPotential > .025f) {
+            val strength=(.48f+.52f*e.spatialPotential).coerceIn(.48f,.92f)
+            result += CandidateSettings("Local light recovery",spatialStrength=strength)
+            result += CandidateSettings("Local balanced correction",spatialStrength=strength,
+                exposureEv=lift+lower,subjectEv=sEv,contrast=contrast,
+                backgroundContrast=backgroundContrast)
+            if(hasLut) result += CandidateSettings("Local light with learned color",
+                spatialStrength=strength*.85f,lutStrength=.38f)
+        }
         return result.filterIndexed { index,c -> index==0 || !c.isNeutral }
     }
 
     fun assess(e: CorrectionEvidence, settings: CandidateSettings, after: FrameTones,
                meanChange: Float, newlyClipped: Float, newlyCrushed: Float,
                hueShifted: Float, vividBoosted: Float,
-               neutralErrorBefore: Float = 0f, neutralErrorAfter: Float = 0f): CandidateAssessment {
+               neutralErrorBefore: Float = 0f, neutralErrorAfter: Float = 0f,
+               spatial: SpatialQuality? = null): CandidateAssessment {
         val valid = meanChange.isFinite() && meanChange <= 38f &&
             newlyClipped <= .003f && newlyCrushed <= .003f &&
             hueShifted <= .035f && vividBoosted <= .035f
@@ -158,9 +171,14 @@ object CandidatePlanner {
                 correction += 110f * (neutralErrorBefore - neutralErrorAfter)
             }
         }
+        // Spatial correction metrics apply to ALL strategies without favoritism.
+        if(spatial!=null && spatial.evidenceTiles>0)
+            correction += 225f*spatial.recoveredShadow
+        val spatialCost=if(spatial!=null)
+            185f*spatial.brightDrift + 280f*spatial.detailLoss + 160f*spatial.haloRisk else 0f
         // Changing more pixels is a cost, never a source of benefit.
         val cost = meanChange * .13f + newlyClipped*3000f + newlyCrushed*3000f +
-            hueShifted*200f + vividBoosted*120f
+            hueShifted*200f + vividBoosted*120f + spatialCost
         val score = correction - cost
         return CandidateAssessment(settings,score,
             "Defect improvement %.2f minus change/artifact cost %.2f".format(correction,cost),
