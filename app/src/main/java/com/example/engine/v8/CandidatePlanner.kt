@@ -34,11 +34,14 @@ data class CandidateSettings(
     val greenGain: Float = 1f,
     val blueGain: Float = 1f,
     val backgroundContrast: Float = 0f,
-    val spatialStrength: Float = 0f
+    val spatialStrength: Float = 0f,
+    val coherentShadows: Float = 0f,
+    val coherentHighlights: Float = 0f
 ) {
     val isNeutral get() = lutStrength == 0f && exposureEv == 0f && subjectEv == 0f &&
         backgroundEv == 0f && contrast == 0f && subjectContrast == 0f &&
         backgroundContrast == 0f && spatialStrength == 0f &&
+        coherentShadows == 0f && coherentHighlights == 0f &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
 }
 
@@ -81,6 +84,10 @@ object CandidatePlanner {
             bg.median > .69f && bg.median > subject.median + .17f) {
             penalty += 105f * approach(.66f, after.background?.median ?: after.whole.median, bg.median)
         }
+        // Credit gentler upper-tone roll-off only where the source has a
+        // wide scene range and very bright samples. Avoid arbitrary sky darkening.
+        if (before.whole.p90 > .90f && before.whole.p10 < .35f)
+            penalty += 40f*max(0f, after.whole.p90-.90f)
         if (!e.intentionallyDark && before.whole.range in .08f.. .40f &&
             before.whole.median in .26f.. .72f)
             penalty += 65f * max(0f, .51f - after.whole.range)
@@ -123,6 +130,12 @@ object CandidatePlanner {
                 wb=(mean/anchors[2]).coerceIn(.86f,1.14f)
             }
         }
+        // Source-derived tonal proposal: midtone-safe, minimal roll-off.
+        // Scene-independent calculations: no class, subject label or test photograph.
+        val coherentShadows=if(!dark && b.whole.median>.24f && b.whole.p10<.16f)
+            ((.16f-b.whole.p10)*2.2f).coerceIn(0f,.30f) else 0f
+        val coherentHighlights=if(b.whole.p90>.86f && b.whole.p10<.40f)
+            ((b.whole.p90-.86f)*2.1f).coerceIn(0f,.25f) else 0f
         val result=mutableListOf(CandidateSettings("Original"))
         if (hasLut) {
             result += CandidateSettings("Learned grade",lutStrength=.85f)
@@ -133,6 +146,10 @@ object CandidatePlanner {
         result += CandidateSettings("Photographic correction",exposureEv=lift+lower,
             subjectEv=sEv,backgroundEv=bEv,contrast=contrast,redGain=wr,greenGain=wg,blueGain=wb,
             backgroundContrast=backgroundContrast)
+        if(coherentShadows>0f || coherentHighlights>0f)
+            result += CandidateSettings("Coherent tonal balance",
+                coherentShadows=coherentShadows,coherentHighlights=coherentHighlights,
+                subjectEv=(sEv*.45f).coerceIn(0f,.3f))
         if (sEv != 0f || bEv != 0f || backgroundContrast != 0f)
             result += CandidateSettings("Independent regions",subjectEv=sEv,backgroundEv=bEv,
                 subjectContrast=if (sEv != 0f && s != null && s.range < .31f) .13f else 0f,
