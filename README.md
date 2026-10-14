@@ -1,3 +1,7 @@
+## V8.1 full-scene editing
+
+The adaptive learned grade now applies across the full image, with independent regional corrections. See [V8.1 scope and verification](README-V8.1.md). Photo-quality superiority and physical-device behavior are not yet verified.
+
 ## V8 offline candidate-planner beta
 
 Filter Slap V8 adds independent subject/background photographic corrections and compares actual rendered candidates against the original using measured defect-reduction and damage metrics. The existing pretrained image-adaptive LUT and local saliency network are still bundled offline. The original photograph is an eligible no-edit result. [V8 implementation and limitations](README-V8.md).
