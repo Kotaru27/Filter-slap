@@ -3,7 +3,7 @@ name: Build and verify debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'upgrade/**']
+    branches: [main, 'upgrade/**', 'audit/**']
 
 jobs:
   verify-and-build:
@@ -36,6 +36,11 @@ jobs:
         run: |
           python -m pip install 'scikit-image==0.25.2'
           python research/quality/prepare_public_photos.py --output-dir app/build/public-photo-input
+      - name: Prepare controlled lighting-stress examples (research only)
+        run: |
+          python research/quality/prepare_lighting_stress.py \
+            --input-dir app/build/public-photo-input \
+            --reference-dir app/build/photo-lighting-references
       - name: Run full Android unit tests (required; failures block APK)
         env:
           PHOTO_COMPARE_INPUT: ${{ github.workspace }}/app/build/public-photo-input
@@ -71,16 +76,23 @@ jobs:
           name: unit-test-reports
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
+      - name: Upload unchanged public originals for stress-reference inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V9-3-UNEDITED-LIGHTING-REFERENCES-NOT-EXPERT-EDITS
+          path: app/build/photo-lighting-references/
+          if-no-files-found: warn
       - name: Upload before-after photo comparisons for human review
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: V9-3-EXPERIMENTAL-CC0-comparisons-REVIEW-REQUIRED
+          name: V9-3-STRESS-BASELINE-CC0-comparisons
           path: app/build/public-photo-pairs/
           if-no-files-found: warn
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V9.3-version-corrected-EXPERIMENTAL
+          name: FilterSlap-V9.3-STRESS-BASELINE-ONLY
           path: app/build/outputs/apk/debug/FilterSlap-V9.3-experimental.apk
           if-no-files-found: error
