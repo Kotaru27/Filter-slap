@@ -84,10 +84,6 @@ object CandidatePlanner {
             bg.median > .69f && bg.median > subject.median + .17f) {
             penalty += 105f * approach(.66f, after.background?.median ?: after.whole.median, bg.median)
         }
-        // Credit gentler upper-tone roll-off only where the source has a
-        // wide scene range and very bright samples. Avoid arbitrary sky darkening.
-        if (before.whole.p90 > .90f && before.whole.p10 < .35f)
-            penalty += 40f*max(0f, after.whole.p90-.90f)
         if (!e.intentionallyDark && before.whole.range in .08f.. .40f &&
             before.whole.median in .26f.. .72f)
             penalty += 65f * max(0f, .51f - after.whole.range)
@@ -182,6 +178,13 @@ object CandidatePlanner {
             return CandidateAssessment(settings,Float.NEGATIVE_INFINITY,
                 "Widespread loss of source color",meanChange,false)
         var correction = deficit(e,e.before) - deficit(e,after)
+        // Legacy candidate rankings are not reweighted. Only the new
+        // optional shoulder-curve proposal receives a bounded reward for
+        // reducing excessive source highlights, with source evidence.
+        if (settings.coherentHighlights>0f && e.before.whole.p90>.90f &&
+            e.before.whole.p10<.35f)
+            correction += 40f*(e.before.whole.p90-after.whole.p90)
+                .coerceIn(0f,.06f)
         val anchors = e.neutralRgb
         if (anchors != null && anchors.size == 3 && anchors.all { it.isFinite() && it > 15f } &&
             e.neutralCoverage >= .008f && e.neutralDisagreement < .07f) {
