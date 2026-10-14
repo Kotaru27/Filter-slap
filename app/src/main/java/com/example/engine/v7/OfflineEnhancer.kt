@@ -8,6 +8,12 @@ import com.example.engine.EditPlan
 import com.example.engine.ProcessingStats
 import com.example.engine.RenderResult
 import com.example.engine.v6.V6AdaptiveEditor
+import com.example.engine.v8.CandidatePlanner
+import com.example.engine.v8.CandidateSettings
+import com.example.engine.v8.CorrectionEvidence
+import com.example.engine.v8.FrameTones
+import com.example.engine.v8.RegionTones
+import com.example.engine.v8.CandidateAssessment
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlin.math.abs
@@ -87,17 +93,100 @@ object OfflineEnhancer {
             }
             digest.update(fingerprint.toByteArray())
             val id=digest.digest().take(8).joinToString("") { "%02x".format(it) }
-            val baseStrength=if(lut!=null) (if(intentionalDark) .18f else .40f)*noiseAttenuation else 0f
-            val base=EditRecipe(lut,mask,baseStrength,globalLift,localLift,detail,
-                input.width.toFloat()/input.height,id,fingerprint,notes,denoise)
-            for(factor in floatArrayOf(1f,.70f,.40f,0f)) {
-                checkCancelled()
-                val trial=if(factor==1f) base else base.attenuated(factor,"Reduced proposal strength")
-                val sample=render(canonical,trial,analysis,checkCancelled,verifyOnly=true)
-                if(sample.outcome!!.damage.safe) return trial
-            }
-            return base.attenuated(0f,"Original retained after candidate review")
+            // Evidence and candidate generation operate on a small common preview.
+            // The same selected immutable recipe will be used at export resolution.
+            val sampleScale=min(1f,384f/max(width,height))
+            val sampleW=max(1,(width*sampleScale+.5f).toInt())
+            val sampleH=max(1,(height*sampleScale+.5f).toInt())
+            val sample=Bitmap.createScaledBitmap(canonical,sampleW,sampleH,true)
+            try {
+                val before=measureTones(sample,mask,checkCancelled)
+                val na=analysis.neutralAnchors
+                val evidence=CorrectionEvidence(before,intentionalDark,na.coverage,
+                    na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB))
+                val proposals=CandidatePlanner.propose(evidence,lut!=null)
+                val assessments=mutableListOf<CandidateAssessment>()
+                val candidates=mutableListOf<EditRecipe>()
+                for(strategy in proposals) {
+                    checkCancelled()
+                    // Detail and denoise are proposed only alongside a measurable
+                    // correction; they cannot turn a neutral no-edit into an edit.
+                    val active=!strategy.isNeutral
+                    val trial=EditRecipe(lut,mask,
+                        strategy.lutStrength*noiseAttenuation,0f,0f,
+                        if(active) detail else 0f,
+                        input.width.toFloat()/input.height,id,fingerprint,notes,
+                        if(active) denoise else 0f,
+                        strategy.exposureEv,strategy.subjectEv,strategy.backgroundEv,
+                        strategy.contrast,strategy.subjectContrast,
+                        strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name)
+                    candidates+=trial
+                    val evaluation=try {
+                        val rendered=render(sample,trial,analysis,checkCancelled)
+                        try {
+                            val after=measureTones(rendered.bitmap,mask,checkCancelled)
+                            val d=rendered.outcome!!.damage
+                            CandidatePlanner.assess(evidence,strategy,after,d.meanChange,
+                                d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted)
+                        } finally { rendered.bitmap.recycle() }
+                    } catch(cancelled: CancellationException) { throw cancelled }
+                    catch(unsafe: UnsafeRenderException) {
+                        CandidateAssessment(strategy,Float.NEGATIVE_INFINITY,
+                            "Failed output safety review",0f,false)
+                    }
+                    assessments+=evaluation
+                }
+                val selected=CandidatePlanner.select(assessments)
+                val index=assessments.indexOf(selected)
+                val diagnostics=assessments.map { item ->
+                    "Candidate ${item.candidate.name}: score=${"%.2f".format(item.score)}, ${item.reason}"
+                }
+                val chosen=candidates[index]
+                return EditRecipe(lut,mask,chosen.modelStrength,chosen.globalLift,chosen.subjectLift,
+                    chosen.detailStrength,chosen.sourceAspect,chosen.id,fingerprint,
+                    notes+diagnostics+"Selected strategy: ${selected.candidate.name}",
+                    chosen.noiseStrength,chosen.exposureEv,chosen.subjectEv,chosen.backgroundEv,
+                    chosen.contrast,chosen.subjectContrast,chosen.redGain,chosen.greenGain,chosen.blueGain,
+                    chosen.strategy)
+            } finally { if(sample !== canonical) sample.recycle() }
         } finally { if(canonical !== input) canonical.recycle() }
+    }
+
+    /** Robust region percentiles measured on the SAME preview for every candidate. */
+    private fun measureTones(input: Bitmap,mask: com.example.engine.v7.MaskField?,
+                             cancelled: () -> Unit): FrameTones {
+        val w=input.width;val h=input.height
+        val line=IntArray(w)
+        val all=IntArray(256);val subject=IntArray(256);val background=IntArray(256)
+        var total=0;var nSubject=0;var nBackground=0
+        for(y in 0 until h) {
+            cancelled()
+            input.getPixels(line,0,w,0,y,w,1)
+            for(x in 0 until w) {
+                val value=line[x]
+                val level=(EnhancementMath.luma(value)*255f).toInt().coerceIn(0,255)
+                all[level]++;total++
+                if(mask!=null) {
+                    val p=mask.at((x+.5f)/w,(y+.5f)/h,value)
+                    if(p>.7f){subject[level]++;nSubject++}
+                    if(p<.3f){background[level]++;nBackground++}
+                }
+            }
+        }
+        fun summary(hist:IntArray,count:Int):RegionTones {
+            var acc=0;var low=0;var med=0;var high=255
+            var lo=false;var mid=false
+            for(i in hist.indices) {
+                acc+=hist[i]
+                if(!lo && acc>=count*.1f){low=i;lo=true}
+                if(!mid && acc>=count*.5f){med=i;mid=true}
+                if(acc>=count*.9f){high=i;break}
+            }
+            return RegionTones(low/255f,med/255f,high/255f,count.toFloat()/total.coerceAtLeast(1))
+        }
+        return FrameTones(summary(all,total),
+            if(nSubject>total*.04f)summary(subject,nSubject)else null,
+            if(nBackground>total*.04f)summary(background,nBackground)else null)
     }
 
     /** Full output validation counts every rendered pixel, not an averaged thumbnail. */
@@ -141,6 +230,13 @@ object OfflineEnhancer {
                 if(amount > .0001f) decisions += EditDecision(name,region,"ColorTone",amount,.6f,.5f,.2f)
             }
             decision("AdaptiveColorTone","Global",recipe.modelStrength)
+            decision("Exposure","Global",abs(recipe.exposureEv))
+            decision("Exposure","Subject",abs(recipe.subjectEv))
+            decision("Exposure","Background",abs(recipe.backgroundEv))
+            decision("Contrast","Global",abs(recipe.contrast))
+            decision("Contrast","Subject",abs(recipe.subjectContrast))
+            if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
+                decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
             decision("Shadows","Global",recipe.globalLift)
             decision("SubjectDetail",if(recipe.mask!=null) "Subject" else "Detail",recipe.detailStrength)
@@ -152,12 +248,12 @@ object OfflineEnhancer {
                 else -> "Enhanced"
             }
             if(status == "Original kept") decisions.clear()
-            val outcome=EnhancementOutcome(status,"V7_OFFLINE",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V8_CANDIDATE",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V7_OFFLINE",outcome.summary()),analysis,outcome,recipe)
+                EditPlan(decisions,"V8_CANDIDATE",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error

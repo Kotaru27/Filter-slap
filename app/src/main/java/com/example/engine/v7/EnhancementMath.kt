@@ -5,6 +5,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlin.math.pow
 
 /** Pure pixel operations shared by Android rendering and host regression tests. */
 object EnhancementMath {
@@ -78,6 +79,31 @@ object EnhancementMath {
         dest[1] = g + strength * ((g*ratio-g) + (dest[1]-g*ratio) * colorStrength)
         dest[2] = b + strength * ((b*ratio-b) + (dest[2]-b*ratio) * colorStrength)
 
+        // Independent photographic corrections. Exposure is expressed in EV and
+        // converted approximately into display-encoded sRGB; all channels share
+        // the same tone multiplier to avoid inventing colored edges. The learned
+        // global look is never permission for an unrelated local correction.
+        dest[0] *= recipe.redGain
+        dest[1] *= recipe.greenGain
+        dest[2] *= recipe.blueGain
+        val regionEv = recipe.exposureEv + recipe.subjectEv * fg +
+            recipe.backgroundEv * (if(recipe.mask != null) 1f-fg else 1f)
+        if (regionEv != 0f) {
+            val gainEv = 2f.pow(regionEv / 2.2f)
+            val exposureProtection = if(regionEv > 0f) highlightProtection else
+                .65f + .35f * shadowProtection
+            val scale = 1f + (gainEv-1f)*exposureProtection
+            dest[0] *= scale; dest[1] *= scale; dest[2] *= scale
+        }
+        val localContrast = (recipe.contrast + recipe.subjectContrast * fg).coerceIn(-.35f,.35f)
+        if (localContrast != 0f) {
+            val mid = luma(dest[0],dest[1],dest[2]).coerceIn(0f,1f)
+            val u = mid-.5f
+            val curve = localContrast * 4f * u * (.25f-u*u)
+            val scale = (mid+curve)/mid.coerceAtLeast(.02f)
+            dest[0] *= scale; dest[1] *= scale; dest[2] *= scale
+        }
+
         // A continuous mid-shadow lift: black remains black, highlights receive almost none.
         val lift = (recipe.globalLift + recipe.subjectLift * fg) * sqrt(y) *
             (1f-y) * (1f-y) * shadowProtection
@@ -145,10 +171,17 @@ class MaskField private constructor(private val values: FloatArray, private val 
 class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
     val modelStrength: Float, val globalLift: Float, val subjectLift: Float,
     val detailStrength: Float, val sourceAspect: Float, val id: String,
-    val modelFingerprint: String, val diagnostics: List<String>, val noiseStrength: Float = 0f) {
+    val modelFingerprint: String, val diagnostics: List<String>, val noiseStrength: Float = 0f,
+    val exposureEv: Float = 0f, val subjectEv: Float = 0f, val backgroundEv: Float = 0f,
+    val contrast: Float = 0f, val subjectContrast: Float = 0f,
+    val redGain: Float = 1f, val greenGain: Float = 1f, val blueGain: Float = 1f,
+    val strategy: String = "Legacy") {
     private val table = lut?.copyOf()
     val isIdentity get() = modelStrength == 0f && globalLift == 0f &&
-        subjectLift == 0f && detailStrength == 0f && noiseStrength == 0f
+        subjectLift == 0f && detailStrength == 0f && noiseStrength == 0f &&
+        exposureEv == 0f && subjectEv == 0f && backgroundEv == 0f &&
+        contrast == 0f && subjectContrast == 0f &&
+        redGain == 1f && greenGain == 1f && blueGain == 1f
     internal fun lookup(r: Float, g: Float, b: Float, dest: FloatArray) {
         if (table == null || modelStrength == 0f) {
             dest[0]=r;dest[1]=g;dest[2]=b
@@ -156,7 +189,9 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
     }
     internal fun attenuated(factor: Float, reason: String) = EditRecipe(table,mask,
         modelStrength*factor,globalLift*factor,subjectLift*factor,detailStrength*factor,
-        sourceAspect,id+"-${(factor*100).toInt()}",modelFingerprint,diagnostics+reason,noiseStrength*factor)
+        sourceAspect,id+"-${(factor*100).toInt()}",modelFingerprint,diagnostics+reason,noiseStrength*factor,
+        exposureEv*factor,subjectEv*factor,backgroundEv*factor,contrast*factor,subjectContrast*factor,
+        1f+(redGain-1f)*factor,1f+(greenGain-1f)*factor,1f+(blueGain-1f)*factor,strategy)
 }
 
 /** Counts newly damaged samples; recovered pixels elsewhere cannot cancel these counts. */
