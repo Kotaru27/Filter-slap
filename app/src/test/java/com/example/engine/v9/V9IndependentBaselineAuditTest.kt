@@ -42,15 +42,17 @@ class V9IndependentBaselineAuditTest {
             "fixture,status,strategy,mask_used,model_strength,mean_abs_rgb_change," +
                 "mean_luma_before,mean_luma_after,mean_channel_range_before," +
                 "mean_channel_range_after,newly_clipped,newly_crushed,hue_shifted," +
-                "vivid_boosted,render_ms"
+                "vivid_boosted,render_ms,total_analysis_and_process_wall_ms,model_issue_reported"
         )
         for ((name, factory) in fixtures) {
             val original = factory()
             var enhanced: Bitmap? = null
             var replayed: Bitmap? = null
             try {
+                val began = System.nanoTime()
                 val analysis = ImageAnalyzer.analyze(original)
                 val output = OfflineEnhancer.process(context, original, analysis)
+                val totalWallMs = (System.nanoTime() - began) / 1_000_000L
                 enhanced = output.bitmap
                 val recipe = requireNotNull(output.recipe)
                 val outcome = requireNotNull(output.outcome)
@@ -90,7 +92,8 @@ class V9IndependentBaselineAuditTest {
                     number(rangeBefore/n),number(rangeAfter/n),
                     number(report.newlyClipped.toDouble()),number(report.newlyCrushed.toDouble()),
                     number(report.hueShifted.toDouble()),number(report.vividBoosted.toDouble()),
-                    output.stats.computeTimeMs.toString()
+                    output.stats.computeTimeMs.toString(),totalWallMs.toString(),
+                    outcome.reasons.any { it.startsWith("Color model:") || it.startsWith("Foreground model:") }.toString()
                 ).joinToString(",")
             } finally {
                 if (replayed != null && replayed !== original && !replayed.isRecycled) replayed.recycle()
