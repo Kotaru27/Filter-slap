@@ -82,4 +82,16 @@ class CandidatePlannerTest {
     }
 
 
+    @Test fun `intentional darkness never earns automatic spatial brightening credit`() {
+        val before=FrameTones(r(.04f,.24f,.54f))
+        val q=com.example.engine.v9.SpatialQuality(.08f,0f,0f,0f,12)
+        val candidate=CandidateSettings("Local candidate",spatialStrength=.6f)
+        val nighttime=CorrectionEvidence(before,true,0f,0f,spatialPotential=.5f)
+        val daytime=nighttime.copy(intentionallyDark=false)
+        val protected=CandidatePlanner.assess(nighttime,candidate,before,8f,0f,0f,0f,0f,spatial=q)
+        val encouraged=CandidatePlanner.assess(daytime,candidate,before,8f,0f,0f,0f,0f,spatial=q)
+        assertTrue("Unwanted night brightening scored as a benefit",protected.score<0f)
+        assertTrue(encouraged.score>protected.score)
+    }
+
 }
