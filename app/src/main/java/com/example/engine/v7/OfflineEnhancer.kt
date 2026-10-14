@@ -128,7 +128,8 @@ object OfflineEnhancer {
                         strategy.exposureEv,strategy.subjectEv,strategy.backgroundEv,
                         strategy.contrast,strategy.subjectContrast,
                         strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name,
-                        strategy.backgroundContrast,strategy.spatialStrength,nativeNoise)
+                        strategy.backgroundContrast,strategy.spatialStrength,nativeNoise,
+                        strategy.coherentShadows,strategy.coherentHighlights)
                     candidates+=trial
                     val evaluation=try {
                         val rendered=render(sample,trial,analysis,checkCancelled)
@@ -162,7 +163,8 @@ object OfflineEnhancer {
                     notes+diagnostics+"Selected editing strategy: ${selected.candidate.name}",
                     chosen.noiseStrength,chosen.exposureEv,chosen.subjectEv,chosen.backgroundEv,
                     chosen.contrast,chosen.subjectContrast,chosen.redGain,chosen.greenGain,chosen.blueGain,
-                    chosen.strategy,chosen.backgroundContrast,chosen.spatialStrength,chosen.noiseLevels)
+                    chosen.strategy,chosen.backgroundContrast,chosen.spatialStrength,chosen.noiseLevels,
+                    chosen.coherentShadows,chosen.coherentHighlights)
             } finally { if(sample !== canonical) sample.recycle() }
         } finally { if(canonical !== input) canonical.recycle() }
     }
@@ -297,6 +299,8 @@ object OfflineEnhancer {
             decision("Contrast","Subject",abs(recipe.subjectContrast))
             decision("Contrast","Background",abs(recipe.backgroundContrast))
             decision("LocalToneRecovery","Spatial",recipe.spatialStrength)
+            decision("Shadows","Global",recipe.coherentShadows)
+            decision("Highlights","Global",recipe.coherentHighlights)
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
                 decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
