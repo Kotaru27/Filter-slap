@@ -74,4 +74,12 @@ class CandidatePlannerTest {
         val plans=CandidatePlanner.propose(e,false)
         assertTrue(plans.any { it.exposureEv > 0f && it.lutStrength == 0f })
     }
+    @Test fun `intentionally dark scene with textured shadows is not automatically lifted`() {
+        val evidence=CorrectionEvidence(FrameTones(r(.03f,.21f,.56f)),true,0f,0f,
+            spatialPotential=.62f)
+        val proposals=CandidatePlanner.propose(evidence,true)
+        assertTrue(proposals.none { it.spatialStrength>0f || it.exposureEv>0f || it.subjectEv>0f })
+    }
+
+
 }
