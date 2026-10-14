@@ -3,7 +3,7 @@ name: Build and verify debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'upgrade/**']
+    branches: [main, 'upgrade/**', 'audit/**']
 
 jobs:
   verify-and-build:
@@ -34,6 +34,15 @@ jobs:
         run: chmod +x gradlew
       - name: Run full Android unit tests (required; failures block APK)
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+      - name: Print synthetic audit metrics for independent review
+        run: cat app/build/v9-independent-audit/synthetic-metrics.csv
+      - name: Publish synthetic audit metrics (not photo-quality evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V11-synthetic-baseline-metrics-NOT-PHOTO-QUALITY
+          path: app/build/v9-independent-audit/synthetic-metrics.csv
+          if-no-files-found: warn
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
