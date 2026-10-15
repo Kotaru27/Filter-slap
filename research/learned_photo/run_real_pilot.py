@@ -18,21 +18,22 @@ except ImportError:
     from data import read_manifest
     from evaluate import evaluate
 
-def run(manifest:Path,out:Path,epochs:int=4):
+def run(manifest:Path,out:Path,epochs:int=4,
+        min_train:int=12,min_val:int=4,min_test:int=4):
     torch.set_num_threads(2)
-    rows=read_manifest(manifest,min_train=12,min_val=4,min_test=4)
+    rows=read_manifest(manifest,min_train=min_train,min_val=min_val,min_test=min_test)
     out.mkdir(parents=True,exist_ok=True)
     candidates={}
     for mode in ("global","spatial"):
         directory=out/mode
         summary=train(manifest,directory,mode,epochs=epochs,batch=2,
-            min_train=12,min_val=4,min_test=4)
-        validation=evaluate(manifest,directory/"best.pt",directory/"validation","val",4)
+            min_train=min_train,min_val=min_val,min_test=min_test)
+        validation=evaluate(manifest,directory/"best.pt",directory/"validation","val",min_test)
         candidates[mode]={"training":summary,"validation":validation}
     # Freeze selection using only validation objective. Test images are unseen
     # by both the optimizer and the selection decision.
     winner=min(candidates,key=lambda name:candidates[name]["training"]["best_validation_objective"])
-    result=evaluate(manifest,out/winner/"best.pt",out/winner/"test","test",4)
+    result=evaluate(manifest,out/winner/"best.pt",out/winner/"test","test",min_test)
     # A tiny pilot cannot establish visual aesthetic gains; for this experiment
     # calculate only aggregate expert-target distance, never a release score.
     improvement=(result["mean_unedited_l1_to_expert"]-
@@ -69,5 +70,8 @@ if __name__=="__main__":
     p.add_argument("--manifest",type=Path,required=True)
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--epochs",type=int,default=4)
+    p.add_argument("--min-train",type=int,default=12)
+    p.add_argument("--min-val",type=int,default=4)
+    p.add_argument("--min-test",type=int,default=4)
     a=p.parse_args()
-    run(a.manifest,a.out,a.epochs)
+    run(a.manifest,a.out,a.epochs,a.min_train,a.min_val,a.min_test)
