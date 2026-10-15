@@ -31,6 +31,23 @@ def aggregate(model_root:Path,android_dir:Path,source_root:Path)->dict:
     parity=[];native_expert=[];v9_expert=[]
     expected_names={"fivek_"+p.stem.removesuffix("_source") for p in source_paths}
     if set(decisions)!=expected_names:raise ValueError("Missing or unexpected research cases")
+    # Identical threshold values to the existing V9 DamageReport.safe:
+    # READ-ONLY diagnosis, never a new safety policy or adaptive tuning.
+    thresholds={"mean_change":35., "new_clipping":.003,
+                "new_crushing":.003, "hue_shift":.04,"vivid_boost":.04}
+    rejection_reasons={name:0 for name in thresholds}
+    unexplained=0
+    for row in decisions.values():
+        observed={k:float(row[k]) for k in thresholds}
+        if not all(np.isfinite(list(observed.values()))):
+            raise ValueError("Nonfinite native damage report")
+        fails=[key for key,limit in thresholds.items() if observed[key]>limit]
+        if row["decision"]=="rejected":
+            if not fails:unexplained+=1
+            for reason in fails:rejection_reasons[reason]+=1
+        elif fails:
+            raise ValueError("Unsafe candidate was accepted by Android")
+    if unexplained:raise ValueError("Unexplained native safety rejections")
     rejections=0
     for ident in sorted(decisions):
         if decisions[ident]["decision"]=="rejected":
@@ -54,6 +71,8 @@ def aggregate(model_root:Path,android_dir:Path,source_root:Path)->dict:
         "total_test_cases":len(source_paths),
         "native_accepted":len(parity),
         "native_safety_rejected":rejections,
+        "native_rejection_reason_counts_overlapping":rejection_reasons,
+        "native_rejection_thresholds_are_unchanged_from_v9":True,
         "mean_native_vs_torch_rgb_l1":float(np.mean(parity)),
         "max_case_native_vs_torch_rgb_l1":float(np.max(parity)),
         "native_parity_under_2_of_255_mean":bool(np.mean(parity)<2./255.),
