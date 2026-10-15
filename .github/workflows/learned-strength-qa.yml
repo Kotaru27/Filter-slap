@@ -7,7 +7,7 @@ on:
       - 'research/quality/create_test_only_onnx.py'
       - 'app/src/main/java/com/example/engine/learned/**'
       - 'app/src/test/java/com/example/engine/learned/**'
-      - '.github/workflows/learned-onnx-e2e.yml'
+      - '.github/workflows/learned-strength-qa.yml'
   workflow_dispatch:
 
 permissions:
@@ -35,11 +35,14 @@ jobs:
         run: |
           python -m pip install 'onnx==1.17.0' 'numpy>=1.26,<3'
           python research/quality/create_test_only_onnx.py --output "$LEARNED_TEST_FIXTURE_DIR"
-      - name: Native ONNX global/spatial end-to-end and safety tests
+      - name: Native ONNX global/spatial and safe attenuation regression tests
         run: |
           chmod +x gradlew
-          ./gradlew :app:testDebugUnitTest --tests '*LearnedOnnxEndToEndTest' \
-            --tests '*LearnedOfflineCandidateTest' \\\n            --tests '*LearnedStrengthSafetyTest' --no-daemon --stacktrace
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*LearnedOnnxEndToEndTest' \
+            --tests '*LearnedOfflineCandidateTest' \
+            --tests '*LearnedStrengthSafetyTest' \
+            --no-daemon --stacktrace
       - name: Ensure only test infrastructure exists in repository
         run: |
           git diff --exit-code -- app/src/main/assets app/src/main/java
