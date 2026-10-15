@@ -36,7 +36,7 @@ def render(model:LearnedPhotoEditor,image:Image.Image,tile_rows:int=256)->Image.
     with torch.inference_mode():
         # Model predicts once from whole photo; full-resolution rendering uses
         # global (not per-tile) x/y coordinates to avoid seams.
-        context=image.resize((256,256),Image.Resampling.BILINEAR)
+        context=image.resize((256,256),Image.Resampling.LANCZOS)
         grid=model.coefficients(tensor(context,device.type))
         out=Image.new("RGB",image.size)
         for top in range(0,image.height,tile_rows):
