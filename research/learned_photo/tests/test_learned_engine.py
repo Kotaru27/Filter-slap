@@ -13,6 +13,7 @@ from model import LearnedPhotoEditor,objective
 from data import read_manifest
 from train import train
 from evaluate import load,render,evaluate,blind_cards,score_votes
+from export_onnx import export as export_onnx
 
 class TestLearnedEngine(unittest.TestCase):
     @classmethod
@@ -102,6 +103,12 @@ class TestFullWorkflow(unittest.TestCase):
                       batch=2,min_train=1,min_val=1,min_test=1)
         self.assertTrue(summary["quality_not_verified_by_human_review"])
         checkpoint=self.root/"model"/"best.pt"
+        # Optional locally, mandatory in GitHub CI (dependencies installed).
+        import importlib.util
+        if importlib.util.find_spec("onnx") and importlib.util.find_spec("onnxruntime"):
+            exported=export_onnx(checkpoint,self.root/"onnx")
+            self.assertFalse(exported["approved_for_app"])
+            self.assertLess(exported["max_coeff_error"],2e-4)
         output=render(load(checkpoint),Image.open(self.root/"input3.png"),tile_rows=11)
         self.assertEqual(output.size,(72,64))
         predicted=self.root/"predictions"
