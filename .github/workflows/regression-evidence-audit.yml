@@ -1,0 +1,54 @@
+name: Regression evidence audit (NO APK OR WEIGHTS)
+on:
+  push:
+    branches: ['research/regression-evidence-audit']
+    paths: ['research/learned_photo/**', '.github/workflows/regression-evidence-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AUDIT_ROOT: /tmp/filter-slap-regression-audit
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+      - name: Install exact versions from original run
+        run: |
+          pip install 'torch==2.14.1+cpu' --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install 'numpy==2.4.6' 'Pillow==12.3.0' 'rawpy==0.27.1' 'requests==2.34.2' 'onnx==1.17.0' 'onnxruntime==1.22.1' 'cryptography==46.0.3'
+      - name: Test diagnostic integrity and existing research invariants
+        run: python -m unittest discover -s research/learned_photo/tests -v
+      - name: Reproduce, evaluate untouched cohort, assert real baseline identity
+        run: bash research/learned_photo/run_regression_audit.sh
+      - name: Publish numerical evidence only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-audit-numerical-evidence
+          path: /tmp/filter-slap-regression-audit/public/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Private visual review transport (encrypted, no weights)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-visual-review-encrypted
+          path: /tmp/filter-slap-regression-audit/sealed/
+          retention-days: 3
+          if-no-files-found: error
