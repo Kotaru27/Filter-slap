@@ -21,7 +21,12 @@ import java.security.MessageDigest
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ActualTrainedPhotoParityTest {
     @Test fun offlineTrainedModelProducesNativeResolutionOutputsOrSafeRejection() {
-        val photoDir=File(requireNotNull(System.getenv("TRAINED_TEST_SOURCE")))
+        // Ordinary Android unit suites do not include restricted research
+        // data. Explicit research CI provides all four variables, and the
+        // subsequent metrics step REQUIRES this test's decision CSV.
+        val input=System.getenv("TRAINED_TEST_SOURCE")
+        org.junit.Assume.assumeTrue("Research data must be supplied separately",input!=null)
+        val photoDir=File(requireNotNull(input))
         val outputDir=File(requireNotNull(System.getenv("TRAINED_ANDROID_OUTPUT")))
         val modelFile=File(requireNotNull(System.getenv("TRAINED_TEST_ONNX")))
         val mode=requireNotNull(System.getenv("TRAINED_TEST_MODE"))
