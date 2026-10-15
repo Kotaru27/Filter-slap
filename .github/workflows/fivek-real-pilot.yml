@@ -43,6 +43,36 @@ jobs:
           python research/learned_photo/run_real_pilot.py \
             --manifest "$PILOT_DATA/manifest.csv" \
             --out "$PILOT_OUTPUT" --epochs 6 --min-train 64 --min-val 16 --min-test 16
+      - name: Prepare JDK and Android test SDK for true V9 algorithm baseline
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK for V9 Robolectric comparison
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+      - name: Rebuild existing pinned offline V9 color/foreground model assets
+        run: |
+          python -m pip install "onnx==1.17.0" "onnxruntime==1.22.1"
+          python -m pip install "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          python research/v6/fetch_weights.py --output research/v6/model_weights
+          python research/v6/export_android_model.py --model-dir research/v6/model_weights --output-dir app/src/main/assets
+          python research/v7/prepare_assets.py --output-dir app/src/main/assets
+      - name: Run identical held-out sources through unchanged V9 OfflineEnhancer
+        env:
+          FIVEK_V9_INPUT: /tmp/fivek-research-only/pairs/test
+          FIVEK_V9_OUTPUT: /tmp/actual-v9-outputs
+        run: |
+          cp research/learned_photo/FiveKBaselineAuditTest.kt \
+            app/src/test/java/com/example/engine/v7/FiveKBaselineAuditTest.kt
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --tests '*FiveKBaselineAuditTest' --no-daemon --stacktrace
+      - name: Strict paired held-out comparison against actual V9 editing algorithm
+        run: |
+          python research/learned_photo/compare_v9_real.py \
+            --data "$PILOT_DATA" --models "$PILOT_OUTPUT" \
+            --v9 /tmp/actual-v9-outputs
       - name: Audit data isolation and no Android modification
         run: |
           test -f "$PILOT_OUTPUT/public_aggregate_metrics.json"
