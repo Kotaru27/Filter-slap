@@ -20,8 +20,8 @@ jobs:
       OMP_NUM_THREADS: "2"
       OPENBLAS_NUM_THREADS: "2"
       MKL_NUM_THREADS: "2"
-      PILOT_DATA: ${{ runner.temp }}/fivek-research-only
-      PILOT_OUTPUT: ${{ runner.temp }}/trained-models-not-for-release
+      PILOT_DATA: /tmp/fivek-research-only
+      PILOT_OUTPUT: /tmp/trained-models-not-for-release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,6 +59,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: real-FiveK-expert-pilot-AGGREGATE-ONLY-NOT-RELEASE
-          path: ${{ runner.temp }}/trained-models-not-for-release/public_aggregate_metrics.json
+          path: /tmp/trained-models-not-for-release/public_aggregate_metrics.json
           retention-days: 7
           if-no-files-found: error
