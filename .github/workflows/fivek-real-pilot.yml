@@ -1,0 +1,64 @@
+name: FiveK genuine expert-pair training pilot (RESEARCH ONLY)
+on:
+  push:
+    branches:
+      - 'research/fivek-real-pilot'
+    paths:
+      - 'research/learned_photo/**'
+      - '.github/workflows/fivek-real-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  true-expert-photo-training:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      PYTHONUNBUFFERED: "1"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      PILOT_DATA: ${{ runner.temp }}/fivek-research-only
+      PILOT_OUTPUT: ${{ runner.temp }}/trained-models-not-for-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned research requirements and RAW decoder
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r research/learned_photo/requirements.txt "rawpy>=0.21,<1" "requests>=2.31,<3"
+      - name: Verify existing learned-model invariants
+        run: python -m unittest discover -s research/learned_photo/tests -v
+      - name: Acquire actual FiveK DNGs + Expert C TIFFs and convert to aligned sRGB
+        run: |
+          python research/learned_photo/prepare_fivek_pilot.py \
+            --root "$PILOT_DATA" --train 12 --val 4 --test 4 --max-edge 384
+      - name: Train both AI editors and evaluate held-out expert photos
+        run: |
+          python research/learned_photo/run_real_pilot.py \
+            --manifest "$PILOT_DATA/manifest.csv" \
+            --out "$PILOT_OUTPUT" --epochs 4
+      - name: Audit data isolation and no Android modification
+        run: |
+          test -f "$PILOT_OUTPUT/public_aggregate_metrics.json"
+          python - <<'PY'
+          import json,os,pathlib
+          report=json.loads((pathlib.Path(os.environ["PILOT_OUTPUT"])/"public_aggregate_metrics.json").read_text())
+          assert (report["n_train"],report["n_val"],report["n_heldout_test"])==(12,4,4)
+          assert not report["approved_for_android"]
+          print("Research test completed. No photo/weights release.")
+          PY
+          git diff --exit-code -- app
+      - name: Publish ONLY numerical research metrics (never source/expert photos or learned weights)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-FiveK-expert-pilot-AGGREGATE-ONLY-NOT-RELEASE
+          path: ${{ runner.temp }}/trained-models-not-for-release/public_aggregate_metrics.json
+          retention-days: 7
+          if-no-files-found: error
