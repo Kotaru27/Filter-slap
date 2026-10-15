@@ -1,0 +1,182 @@
+name: Public-Domain Guarded Learned Visual Review (RESEARCH ONLY)
+on:
+  push:
+    branches:
+      - 'research/guarded-visual-review'
+    paths:
+      - 'research/learned_photo/**'
+      - '.github/workflows/guarded-visual-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  true-expert-photo-training:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      PYTHONUNBUFFERED: "1"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      PILOT_DATA: /tmp/fivek-research-only
+      PILOT_OUTPUT: /tmp/trained-models-not-for-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned research requirements and RAW decoder
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r research/learned_photo/requirements.txt "rawpy>=0.21,<1" "requests>=2.31,<3"
+      - name: Verify existing learned-model invariants
+        run: python -m unittest discover -s research/learned_photo/tests -v
+      - name: Acquire actual FiveK DNGs + Expert C TIFFs and convert to aligned sRGB
+        run: |
+          python research/learned_photo/prepare_fivek_pilot.py \
+            --root "$PILOT_DATA" --train 64 --val 16 --test 16 --max-edge 384 --test-offset 64
+      - name: Train both AI editors and evaluate held-out expert photos
+        run: |
+          python research/learned_photo/run_real_pilot.py \
+            --manifest "$PILOT_DATA/manifest.csv" \
+            --out "$PILOT_OUTPUT" --epochs 6 --min-train 64 --min-val 16 --min-test 16
+      - name: Prepare JDK and Android test SDK for true V9 algorithm baseline
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK for V9 Robolectric comparison
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+      - name: Rebuild existing pinned offline V9 color/foreground model assets
+        run: |
+          python -m pip install "onnx==1.17.0" "onnxruntime==1.22.1"
+          python -m pip install "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          python research/v6/fetch_weights.py --output research/v6/model_weights
+          python research/v6/export_android_model.py --model-dir research/v6/model_weights --output-dir app/src/main/assets
+          python research/v7/prepare_assets.py --output-dir app/src/main/assets
+      - name: Run identical held-out sources through unchanged V9 OfflineEnhancer
+        env:
+          FIVEK_V9_INPUT: /tmp/fivek-research-only/pairs/test
+          FIVEK_V9_OUTPUT: /tmp/actual-v9-outputs
+        run: |
+          cp research/learned_photo/FiveKBaselineAuditTest.kt \
+            app/src/test/java/com/example/engine/v7/FiveKBaselineAuditTest.kt
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --tests '*FiveKBaselineAuditTest' --no-daemon --stacktrace
+      - name: Strict paired held-out comparison against actual V9 editing algorithm
+        run: |
+          python research/learned_photo/compare_v9_real.py \
+            --data "$PILOT_DATA" --models "$PILOT_OUTPUT" \
+            --v9 /tmp/actual-v9-outputs
+      - name: Export the real trained research winner to ONNX without distribution
+        run: |
+          MODE="$(python -c 'import os,json,pathlib; p=pathlib.Path(os.environ["PILOT_OUTPUT"])/"public_aggregate_metrics.json"; print(json.loads(p.read_text())["winning_mode"])')"
+          python research/learned_photo/export_onnx.py \
+            --checkpoint "$PILOT_OUTPUT/$MODE/best.pt" \
+            --out /tmp/trained-onnx-do-not-publish
+          echo "TRAINED_TEST_MODE=$MODE" >> "$GITHUB_ENV"
+          echo "TRAINED_TEST_ONNX=/tmp/trained-onnx-do-not-publish/learned_${MODE}_predictor.onnx" >> "$GITHUB_ENV"
+      - name: Prepare isolated Android learned-runtime source from PR branch
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/research/learned-strength-quality-gate
+          mkdir -p app/src/main/java/com/example/engine/learned \
+            app/src/test/java/com/example/engine/learned
+          git show FETCH_HEAD:app/src/main/java/com/example/engine/learned/LearnedOfflineCandidate.kt \
+            > app/src/main/java/com/example/engine/learned/LearnedOfflineCandidate.kt
+          git show FETCH_HEAD:app/src/main/java/com/example/engine/learned/LearnedCoefficientGrid.kt \
+            > app/src/main/java/com/example/engine/learned/LearnedCoefficientGrid.kt
+          git show FETCH_HEAD:app/src/test/java/com/example/engine/learned/ActualTrainedPhotoParityTest.kt \
+            > app/src/test/java/com/example/engine/learned/ActualTrainedPhotoParityTest.kt
+          git show FETCH_HEAD:app/src/test/java/com/example/engine/learned/ActualTrainedStrengthTest.kt \
+            > app/src/test/java/com/example/engine/learned/ActualTrainedStrengthTest.kt
+          git show FETCH_HEAD:app/src/test/java/com/example/engine/learned/PublicVisualComparisonTest.kt \
+            > app/src/test/java/com/example/engine/learned/PublicVisualComparisonTest.kt
+          test ! -e app/src/main/assets/learned_global_predictor.onnx
+      - name: Execute real FiveK-trained model on actual Android ONNX native runtime
+        env:
+          TRAINED_TEST_SOURCE: /tmp/fivek-research-only/pairs/test
+          TRAINED_ANDROID_OUTPUT: /tmp/learned-android-native-output-do-not-publish
+        run: |
+          ./gradlew :app:testDebugUnitTest --tests '*ActualTrainedPhotoParityTest' \
+            --no-daemon --stacktrace
+      - name: Compare Android pixels, trained PyTorch reference and original V9 on SAME photos
+        run: |
+          python research/learned_photo/compare_android_native.py \
+            --source "$PILOT_DATA" \
+            --model-root "$PILOT_OUTPUT" \
+            --android /tmp/learned-android-native-output-do-not-publish
+      - name: Render learned candidate at preset strengths using unchanged V9 safety filter
+        env:
+          TRAINED_TEST_SOURCE: /tmp/fivek-research-only/pairs/test
+          TRAINED_STRENGTH_OUTPUT: /tmp/learned-strength-output-do-not-publish
+        run: |
+          ./gradlew :app:testDebugUnitTest --tests '*ActualTrainedStrengthTest' \
+            --no-daemon --stacktrace
+      - name: Evaluate guarded strongest-safe learned edit with original V9 fallback on same photos
+        run: |
+          python research/learned_photo/compare_strength_native.py \
+            --data "$PILOT_DATA" --models "$PILOT_OUTPUT" \
+            --native /tmp/learned-strength-output-do-not-publish \
+            --v9 /tmp/actual-v9-outputs
+      - name: Prepare only redistributable public-domain photographic review fixtures
+        run: |
+          python -m pip install 'scikit-image>=0.24,<1'
+          python research/learned_photo/public_visual_fixtures.py \
+            --output-dir /tmp/public-domain-photo-review
+      - name: Generate ORIGINAL vs unchanged V9 vs guarded learned output using Android renderer
+        env:
+          PUBLIC_VISUAL_INPUT: /tmp/public-domain-photo-review
+          PUBLIC_VISUAL_OUTPUT: /tmp/public-domain-photo-triples
+        run: |
+          ./gradlew :app:testDebugUnitTest --tests '*PublicVisualComparisonTest' \
+            --no-daemon --stacktrace
+      - name: Create reviewer-friendly public-domain contact sheet
+        run: |
+          python research/learned_photo/make_public_visual_sheet.py \
+            --input /tmp/public-domain-photo-triples \
+            --output /tmp/public-domain-REVIEW-ONLY.jpg
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root=Path("/tmp/public-domain-photo-triples")
+          allowed={"astronaut","coffee","chelsea","rocket","camera","clock"}
+          observed={p.name for p in root.iterdir()}
+          expected={"manifest.csv"}|{f"{name}-{state}.png" for name in allowed for state in ("original","v9","guarded")}
+          assert observed==expected, "Refusing to upload anything outside public-domain fixtures"
+          assert Path("/tmp/public-domain-REVIEW-ONLY.jpg").stat().st_size>10000
+          print("PUBLIC_ONLY: verified no research training sources/weights in visual artifacts")
+          PY
+      - name: Upload ONLY public-domain original/V9/guarded comparison outputs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: six-PUBLIC-DOMAIN-original-V9-guarded-learned-photos-NOT-QUALITY-VERIFIED
+          path: |
+            /tmp/public-domain-photo-triples/
+            /tmp/public-domain-REVIEW-ONLY.jpg
+          retention-days: 5
+          if-no-files-found: error
+      - name: Audit data isolation and no Android modification
+        run: |
+          test -f "$PILOT_OUTPUT/public_aggregate_metrics.json"
+          python - <<'PY'
+          import json,os,pathlib
+          report=json.loads((pathlib.Path(os.environ["PILOT_OUTPUT"])/"public_aggregate_metrics.json").read_text())
+          assert (report["n_train"],report["n_val"],report["n_heldout_test"])==(64,16,16)
+          assert not report["approved_for_android"]
+          print("Research test completed. No photo/weights release.")
+          PY
+          git diff --exit-code -- app
+      - name: Publish ONLY numerical research metrics (never source/expert photos or learned weights)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiveK-guarded-PUBLIC-visual-run-aggregate-only
+          path: /tmp/trained-models-not-for-release/public_aggregate_metrics.json
+          retention-days: 7
+          if-no-files-found: error
