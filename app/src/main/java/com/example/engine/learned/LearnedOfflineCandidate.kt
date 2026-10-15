@@ -82,7 +82,8 @@ internal object LearnedOfflineCandidate {
 
     /** Safely exports candidate at native resolution using bounded row buffers. */
     fun renderCandidate(source:Bitmap,grid:LearnedCoefficientGrid,
-                        hash:String="research-probe",checkCancelled:()->Unit={}):Preview? {
+                        hash:String="research-probe",checkCancelled:()->Unit={},
+                        observeDamage:((DamageReport)->Unit)?=null):Preview? {
         require(!source.isRecycled && source.width>0 && source.height>0)
         val output=Bitmap.createBitmap(source.width,source.height,Bitmap.Config.ARGB_8888)
         val src=IntArray(source.width)
@@ -102,6 +103,9 @@ internal object LearnedOfflineCandidate {
                 output.setPixels(dest,0,source.width,0,y,source.width,1)
             }
             val report=damages.report()
+            // Research-only observer: report factual harm metrics even if
+            // the candidate is rejected. Does NOT alter acceptance thresholds.
+            observeDamage?.invoke(report)
             if(!report.safe) {
                 output.recycle()
                 return null
@@ -120,9 +124,10 @@ internal object LearnedOfflineCandidate {
      */
     internal fun previewApprovedBytes(source:Bitmap,modelBytes:ByteArray,
                                       approvedSha256:String,mode:String="global",
-                                      checkCancelled:()->Unit={}):Preview? {
+                                      checkCancelled:()->Unit={},
+                                      observeDamage:((DamageReport)->Unit)?=null):Preview? {
         val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
-        return renderCandidate(source,grid,hash,checkCancelled)
+        return renderCandidate(source,grid,hash,checkCancelled,observeDamage)
     }
 
     /** Return null if no strictly approved bundled model is available. */
