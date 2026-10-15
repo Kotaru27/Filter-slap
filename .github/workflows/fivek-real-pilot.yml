@@ -73,6 +73,39 @@ jobs:
           python research/learned_photo/compare_v9_real.py \
             --data "$PILOT_DATA" --models "$PILOT_OUTPUT" \
             --v9 /tmp/actual-v9-outputs
+      - name: Export the real trained research winner to ONNX without distribution
+        run: |
+          MODE="$(python -c 'import os,json,pathlib; p=pathlib.Path(os.environ["PILOT_OUTPUT"])/"public_aggregate_metrics.json"; print(json.loads(p.read_text())["winning_mode"])')"
+          python research/learned_photo/export_onnx.py \
+            --checkpoint "$PILOT_OUTPUT/$MODE/best.pt" \
+            --out /tmp/trained-onnx-do-not-publish
+          echo "TRAINED_TEST_MODE=$MODE" >> "$GITHUB_ENV"
+          echo "TRAINED_TEST_ONNX=/tmp/trained-onnx-do-not-publish/learned_${MODE}_predictor.onnx" >> "$GITHUB_ENV"
+      - name: Prepare isolated Android learned-runtime source from PR branch
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/research/learned-android-end-to-end-parity
+          mkdir -p app/src/main/java/com/example/engine/learned \
+            app/src/test/java/com/example/engine/learned
+          git show FETCH_HEAD:app/src/main/java/com/example/engine/learned/LearnedOfflineCandidate.kt \
+            > app/src/main/java/com/example/engine/learned/LearnedOfflineCandidate.kt
+          git show FETCH_HEAD:app/src/main/java/com/example/engine/learned/LearnedCoefficientGrid.kt \
+            > app/src/main/java/com/example/engine/learned/LearnedCoefficientGrid.kt
+          git show FETCH_HEAD:app/src/test/java/com/example/engine/learned/ActualTrainedPhotoParityTest.kt \
+            > app/src/test/java/com/example/engine/learned/ActualTrainedPhotoParityTest.kt
+          test ! -e app/src/main/assets/learned_global_predictor.onnx
+      - name: Execute real FiveK-trained model on actual Android ONNX native runtime
+        env:
+          TRAINED_TEST_SOURCE: /tmp/fivek-research-only/pairs/test
+          TRAINED_ANDROID_OUTPUT: /tmp/learned-android-native-output-do-not-publish
+        run: |
+          ./gradlew :app:testDebugUnitTest --tests '*ActualTrainedPhotoParityTest' \
+            --no-daemon --stacktrace
+      - name: Compare Android pixels, trained PyTorch reference and original V9 on SAME photos
+        run: |
+          python research/learned_photo/compare_android_native.py \
+            --source "$PILOT_DATA" \
+            --model-root "$PILOT_OUTPUT" \
+            --android /tmp/learned-android-native-output-do-not-publish
       - name: Audit data isolation and no Android modification
         run: |
           test -f "$PILOT_OUTPUT/public_aggregate_metrics.json"
