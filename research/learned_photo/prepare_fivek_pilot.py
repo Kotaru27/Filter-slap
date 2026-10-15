@@ -88,9 +88,11 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
         # A fixed disjoint subset of the dataset's official split. This is
         # never selected using image content, validation scores or labels.
         items=sorted(records.items(),key=lambda x:hashlib.sha256(
-            (str(seed)+":"+x[0]).encode()).hexdigest())[:count]
-        if len(items)!=count:raise ValueError("Insufficient official split records")
+            (str(seed)+":"+x[0]).encode()).hexdigest())
+        if len(items)<count:raise ValueError("Insufficient official split records")
+        admitted=0
         for name,item in items:
+            if admitted>=count:break
             urls=item["urls"]
             dng_url=safe_url(urls["dng"],".dng")
             tif_url=safe_url(urls["tiff16"]["c"],".tif")
@@ -100,7 +102,10 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
             target=expert_srgb(tiff)
             sr=source.width/source.height; tr=target.width/target.height
             if abs(sr/tr-1)>.025:
-                raise ValueError(f"Pair geometry mismatch for {name}: {source.size} vs {target.size}")
+                print(json.dumps({"excluded_unaligned_capture":item["id"],
+                    "source_geometry":source.size,
+                    "expert_geometry":target.size}),flush=True)
+                continue
             # Preserve ratio and reject crop mismatches; paired files must
             # depict the same composition even when RAW/TIFF dimensions vary.
             def shrink(im):
@@ -119,12 +124,15 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
             manifest.append(dict(id="fivek_"+file_id,source=str(a.relative_to(root)),
                 target=str(b.relative_to(root)),rights=rights,split=split,
                 group="fivek_capture_"+file_id,category=category,preserve="no"))
+            admitted+=1
             diagnostics.append(dict(id=file_id,split=split,raw_size=str(raw.stat().st_size),
                expert_size=str(tiff.stat().st_size),converted_geometry=str(source.size),
                license=item.get("license"),source_sha256=hashlib.sha256(a.read_bytes()).hexdigest(),
                expert_sha256=hashlib.sha256(b.read_bytes()).hexdigest()))
             print(json.dumps({"prepared":file_id,"split":split,
                 "photo_category":category,"geometry":source.size}),flush=True)
+        if admitted!=count:
+            raise ValueError(f"Could not find {count} valid aligned pairs for {split}")
     fieldnames=list(manifest[0])
     with (root/"manifest.csv").open("w",newline="") as f:
         writer=csv.DictWriter(f,fieldnames=fieldnames)
