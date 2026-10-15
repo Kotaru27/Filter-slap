@@ -24,6 +24,8 @@ SPLIT_URLS = {
  "test": "https://huggingface.co/datasets/yuukicammy/MIT-Adobe-FiveK/raw/main/testing.json"
 }
 MAX_BYTES = 100 * 1024 * 1024
+class OversizedPairAsset(ValueError):
+    """A genuine dataset asset is too large for the bounded research pilot."""
 def session():
     s=requests.Session()
     adapter=HTTPAdapter(max_retries=Retry(total=3,backoff_factor=2,
@@ -46,12 +48,12 @@ def download(s,url: str, out:Path):
     with s.get(url,timeout=(20,120),stream=True) as response:
         response.raise_for_status()
         if int(response.headers.get("Content-Length","0"))>MAX_BYTES:
-            raise ValueError("Dataset asset exceeds size limit")
+            raise OversizedPairAsset("Dataset asset exceeds size limit")
         with tmp.open("wb") as f:
             for chunk in response.iter_content(1024*256):
                 if not chunk:continue
                 size+=len(chunk)
-                if size>MAX_BYTES:raise ValueError("Dataset file too large")
+                if size>MAX_BYTES:raise OversizedPairAsset("Dataset file too large")
                 f.write(chunk)
     if size<512:raise ValueError("Truncated download")
     tmp.replace(out)
@@ -96,8 +98,17 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
             urls=item["urls"]
             dng_url=safe_url(urls["dng"],".dng")
             tif_url=safe_url(urls["tiff16"]["c"],".tif")
-            raw=download(s,dng_url,root/"raw"/(name+".dng"))
-            tiff=download(s,tif_url,root/"expert"/(name+".tif"))
+            raw_path=root/"raw"/(name+".dng")
+            tif_path=root/"expert"/(name+".tif")
+            try:
+                raw=download(s,dng_url,raw_path)
+                tiff=download(s,tif_url,tif_path)
+            except OversizedPairAsset:
+                print(json.dumps({"excluded_large_capture":item["id"]}),flush=True)
+                for leftover in (raw_path,tif_path,
+                     raw_path.with_suffix(".download"),tif_path.with_suffix(".download")):
+                    leftover.unlink(missing_ok=True)
+                continue
             source=source_srgb(raw)
             target=expert_srgb(tiff)
             sr=source.width/source.height; tr=target.width/target.height
