@@ -76,8 +76,9 @@ def expert_srgb(expert_path:Path):
         return rgb.copy()
 
 def prepare(root:Path, train=12, val=4, test=4, seed=27,
-            max_edge=384):
-    if min(train,val,test)<1 or max_edge<128:raise ValueError("Invalid research pilot size")
+            max_edge=384,test_offset=0):
+    if min(train,val,test)<1 or max_edge<128 or test_offset<0:
+        raise ValueError("Invalid research pilot size")
     root.mkdir(parents=True,exist_ok=True)
     s=session()
     counts={"train":train,"val":val,"test":test}
@@ -91,6 +92,9 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
         # never selected using image content, validation scores or labels.
         items=sorted(records.items(),key=lambda x:hashlib.sha256(
             (str(seed)+":"+x[0]).encode()).hexdigest())
+        # Independent, predeclared test offset after the earlier research
+        # experiment: never select a prior exposed photo based on outcomes.
+        if split=="test":items=items[test_offset:]
         if len(items)<count:raise ValueError("Insufficient official split records")
         admitted=0
         for name,item in items:
@@ -168,5 +172,7 @@ if __name__=="__main__":
     p.add_argument("--val",type=int,default=4)
     p.add_argument("--test",type=int,default=4)
     p.add_argument("--max-edge",type=int,default=384)
+    p.add_argument("--test-offset",type=int,default=0)
     args=p.parse_args()
-    prepare(args.root,args.train,args.val,args.test,max_edge=args.max_edge)
+    prepare(args.root,args.train,args.val,args.test,
+        max_edge=args.max_edge,test_offset=args.test_offset)
