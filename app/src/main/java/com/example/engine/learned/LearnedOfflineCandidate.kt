@@ -52,7 +52,11 @@ internal object LearnedOfflineCandidate {
             input[2*sourcePixels.size+i]=(pixel and 255)/255f
         }
         val env=OrtEnvironment.getEnvironment()
-        env.createSession(bytes,ai.onnxruntime.OrtSession.SessionOptions()).use { session ->
+        val options=ai.onnxruntime.OrtSession.SessionOptions()
+        options.setIntraOpNumThreads(2)
+        val session=try { env.createSession(bytes,options) }
+            finally { options.close() }
+        session.use {
             OnnxTensor.createTensor(env,FloatBuffer.wrap(input),
                 longArrayOf(1,3,CONTEXT.toLong(),CONTEXT.toLong())).use { tensor ->
                 checkCancelled()
