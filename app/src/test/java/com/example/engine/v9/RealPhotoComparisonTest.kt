@@ -57,8 +57,8 @@ class RealPhotoComparisonTest {
                 // engine. This uses actual rendered output and compiled BuildConfig.
                 assertEquals("V9_3_COHERENT_TONE",outcome.engine)
                 assertEquals("V9_3_COHERENT_TONE",result.appliedPlan.profileName)
-                assertEquals("1.5.3-v9.3-coherent-tone-experimental",BuildConfig.VERSION_NAME)
-                assertEquals(12,BuildConfig.VERSION_CODE)
+                assertEquals("1.5.5-v9.5-ai-runtime-no-model",BuildConfig.VERSION_NAME)
+                assertEquals(14,BuildConfig.VERSION_CODE)
                 assertTrue("Safety failed for ${file.name}",outcome.damage.safe)
                 assertEquals(original.width,edited.width)
                 assertEquals(original.height,edited.height)
