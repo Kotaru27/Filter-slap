@@ -61,6 +61,39 @@ class LearnedStrengthSafetyTest {
         }finally{input.recycle()}
     }
 
+    @Test fun singleScanMakesExactSameDecisionsAsAllFiveFullResolutionPasses() {
+        val candidates=floatArrayOf(1f,.75f,.5f,.25f,.125f)
+        // Fixture image content varies across every pixel. There is no
+        // image-specific production code or approval from target labels.
+        for(bias in floatArrayOf(-2f,-.25f,0f,.09f,.2f,.8f,3f)){
+            val input=Bitmap.createBitmap(43,57,Bitmap.Config.ARGB_8888)
+            for(y in 0 until input.height)for(x in 0 until input.width){
+                val red=(19+3*x+7*y)%256
+                val green=(9+13*x+5*y)%256
+                val blue=(33+11*x+17*y)%256
+                input.setPixel(x,y,0xff000000.toInt() or
+                    (red shl 16) or (green shl 8) or blue)
+            }
+            try {
+                val grid=grid(bias)
+                var sequential:Float?=null
+                for(strength in candidates){
+                    val output=LearnedOfflineCandidate.renderCandidateAtStrength(
+                        input,grid,strength)
+                    if(output!=null){
+                        sequential=strength
+                        output.bitmap.recycle()
+                        break
+                    }
+                }
+                val onePass=LearnedOfflineCandidate.strongestSafeStrengthForTest(
+                    input,grid)
+                assertEquals("Single-pass must match unchanged acceptance for bias="+bias,
+                    sequential,onePass)
+            }finally{input.recycle()}
+        }
+    }
+
     @Test fun fullStrengthHarmCheckCannotBeBypassedByStrongerCandidate() {
         val input=Bitmap.createBitmap(20,20,Bitmap.Config.ARGB_8888)
         input.eraseColor(0xfff4f4f4.toInt())
