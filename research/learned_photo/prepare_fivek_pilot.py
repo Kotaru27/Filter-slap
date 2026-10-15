@@ -160,7 +160,7 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
         writer.writeheader();writer.writerows(manifest)
     (root/"provenance-private.json").write_text(json.dumps(
        {"source":"MIT-Adobe FiveK official via research-only mirror metadata",
-        "source_urls":SPLIT_URLS,"seed":seed,
+        "source_urls":SPLIT_URLS,"seed":seed,"test_offset":test_offset,
         "warning":"Research only. No trained model distribution or Android integration.",
         "records":diagnostics},indent=2))
     print(json.dumps({"complete":True,"counts":counts,"research_only":True}),flush=True)
