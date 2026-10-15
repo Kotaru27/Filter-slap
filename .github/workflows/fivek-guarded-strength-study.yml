@@ -1,4 +1,4 @@
-name: FiveK Guarded Learned Strength Study (RESEARCH ONLY)
+name: FiveK Independent Guarded Strength Study (RESEARCH ONLY)
 on:
   push:
     branches:
@@ -37,7 +37,7 @@ jobs:
       - name: Acquire actual FiveK DNGs + Expert C TIFFs and convert to aligned sRGB
         run: |
           python research/learned_photo/prepare_fivek_pilot.py \
-            --root "$PILOT_DATA" --train 64 --val 16 --test 16 --max-edge 384
+            --root "$PILOT_DATA" --train 64 --val 16 --test 16 --max-edge 384 --test-offset 64
       - name: Train both AI editors and evaluate held-out expert photos
         run: |
           python research/learned_photo/run_real_pilot.py \
