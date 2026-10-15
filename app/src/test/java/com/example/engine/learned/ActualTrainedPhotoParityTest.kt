@@ -40,16 +40,21 @@ class ActualTrainedPhotoParityTest {
             .sortedBy{it.name}
         assertEquals(16,photos.size)
         var accepted=0
-        val rows=mutableListOf("id,decision,mean_change")
+        val rows=mutableListOf("id,decision,mean_change,new_clipping,new_crushing,hue_shift,vivid_boost")
         for(photo in photos) {
             val bitmap=BitmapFactory.decodeFile(photo.absolutePath)
                 ?: throw IllegalStateException("Invalid source")
             val ident="fivek_"+photo.name.removeSuffix("_source.png")
             try {
+                var diagnostics:com.example.engine.v7.DamageReport?=null
                 val output=LearnedOfflineCandidate.previewApprovedBytes(
-                    bitmap,bytes,hash,mode)
+                    bitmap,bytes,hash,mode,observeDamage={ diagnostics=it })
+                val damage=checkNotNull(diagnostics) { "No final pixel evidence collected" }
+                val properties="${damage.meanChange},${damage.newlyClipped}," +
+                    "${damage.newlyCrushed},${damage.hueShifted},${damage.vividBoosted}"
                 if(output==null) {
-                    rows += "$ident,rejected,0"
+                    assertFalse(damage.safe)
+                    rows += "$ident,rejected,$properties"
                     continue
                 }
                 try {
@@ -60,7 +65,8 @@ class ActualTrainedPhotoParityTest {
                     File(outputDir,"$ident.png").outputStream().use {
                         assertTrue(output.bitmap.compress(Bitmap.CompressFormat.PNG,100,it))
                     }
-                    rows += "$ident,accepted,${output.damage.meanChange}"
+                    assertTrue(damage.safe)
+                    rows += "$ident,accepted,$properties"
                     accepted++
                 }finally {output.bitmap.recycle()}
             }finally {bitmap.recycle()}
