@@ -157,6 +157,12 @@ internal object LearnedOfflineCandidate {
         }
     }
 
+    /** Test-only research hook; unchanged DamageReport.safe gate. */
+    internal fun renderCandidateAtStrength(
+        source:Bitmap,grid:LearnedCoefficientGrid,strength:Float,
+        checkCancelled:()->Unit={}
+    ):Preview?=renderAtStrength(source,grid,strength,"strength-study",checkCancelled)
+
     /** Existing public candidate path, exact legacy strength one. */
     fun renderCandidate(source:Bitmap,grid:LearnedCoefficientGrid,
                         hash:String="research-probe",checkCancelled:()->Unit={},
