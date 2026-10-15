@@ -1,0 +1,11 @@
+*.pt
+*.pth
+private/
+data/
+output/
+__pycache__/
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff

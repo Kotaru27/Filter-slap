@@ -1,0 +1,4 @@
+id,source,target,rights,split,group,category,preserve
+example_train,private/train_original.png,private/train_expert.png,licensed-expert-retouch-training,train,capture-session-1,architecture,no
+example_val,private/val_original.png,private/val_expert.png,licensed-expert-retouch-validation,val,capture-session-2,portrait,no
+example_test,private/test_original.png,private/test_expert.png,licensed-expert-retouch-evaluation,test,capture-session-3,already-good,yes

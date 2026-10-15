@@ -1,0 +1,30 @@
+name: Learned photo research (NOT an Android release)
+on:
+  push:
+    branches:
+      - 'research/learned-photo-engine'
+    paths:
+      - 'research/learned_photo/**'
+      - '.github/workflows/learned-photo-research.yml'
+  workflow_dispatch:
+jobs:
+  train-and-render-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU-only research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r research/learned_photo/requirements.txt
+          pip install "onnx>=1.16,<2" "onnxruntime>=1.18,<2"
+      - name: Verify training, identity, leakage, exporting and blind-review invariants
+        run: python -m unittest discover -s research/learned_photo/tests -v
+      - name: Ensure the Android production renderer was not replaced
+        run: |
+          test ! -f app/src/main/assets/learned_spatial_predictor.onnx
+          test ! -f app/src/main/assets/learned_global_predictor.onnx
+          echo 'No photo-quality proof or APK release produced by synthetic tests.'
