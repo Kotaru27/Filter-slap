@@ -105,6 +105,8 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
                 print(json.dumps({"excluded_unaligned_capture":item["id"],
                     "source_geometry":source.size,
                     "expert_geometry":target.size}),flush=True)
+                raw.unlink(missing_ok=True)
+                tiff.unlink(missing_ok=True)
                 continue
             # Preserve ratio and reject crop mismatches; paired files must
             # depict the same composition even when RAW/TIFF dimensions vary.
@@ -131,6 +133,10 @@ def prepare(root:Path, train=12, val=4, test=4, seed=27,
                expert_sha256=hashlib.sha256(b.read_bytes()).hexdigest()))
             print(json.dumps({"prepared":file_id,"split":split,
                 "photo_category":category,"geometry":source.size}),flush=True)
+            # The private paired sRGB training inputs are sufficient after
+            # conversion. Do not retain large source archives on the runner.
+            raw.unlink(missing_ok=True)
+            tiff.unlink(missing_ok=True)
         if admitted!=count:
             raise ValueError(f"Could not find {count} valid aligned pairs for {split}")
     fieldnames=list(manifest[0])
