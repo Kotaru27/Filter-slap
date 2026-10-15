@@ -102,6 +102,38 @@ internal object LearnedOfflineCandidate {
     private val STRENGTHS=floatArrayOf(1f,.75f,.5f,.25f,.125f)
 
     /**
+     * Single full-resolution scan obtains exact damage evidence for every
+     * candidate strength. Only ONE expensive guided-grid interpolation per
+     * pixel, instead of up to five full re-renders. Strictly preserves
+     * candidate order and the unchanged V9 DamageReport.safe decision.
+     */
+    private fun strongestSafeStrength(source:Bitmap,grid:LearnedCoefficientGrid,
+                                      checkCancelled:()->Unit):Float? {
+        val evidence=Array(STRENGTHS.size) { DamageAccumulator() }
+        val row=IntArray(source.width)
+        val invW=1f/(source.width-1).coerceAtLeast(1)
+        val invH=1f/(source.height-1).coerceAtLeast(1)
+        for(y in 0 until source.height) {
+            checkCancelled()
+            source.getPixels(row,0,source.width,0,y,source.width,1)
+            for(x in row.indices) {
+                val original=row[x]
+                val predicted=grid.pixel(original,x*invW,y*invH)
+                for(i in STRENGTHS.indices)
+                    evidence[i].add(original,
+                        attenuatePixel(original,predicted,STRENGTHS[i]))
+            }
+        }
+        return STRENGTHS.indices.firstOrNull{evidence[it].report().safe}
+            ?.let{STRENGTHS[it]}
+    }
+
+    internal fun strongestSafeStrengthForTest(
+        source:Bitmap,grid:LearnedCoefficientGrid,
+        checkCancelled:()->Unit={}
+    ):Float?=strongestSafeStrength(source,grid,checkCancelled)
+
+    /**
      * Train/validation research path only: choose the strongest candidate
      * satisfying the exact original V9 damage policy; never use the held-out
      * expert retouch to choose per-photo strength.
@@ -111,12 +143,11 @@ internal object LearnedOfflineCandidate {
         mode:String="global",checkCancelled:()->Unit={}
     ):StrengthSelection? {
         val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
-        for(strength in STRENGTHS) {
-            checkCancelled()
-            val safe=renderAtStrength(source,grid,strength,hash,checkCancelled)
-            if(safe!=null) return StrengthSelection(safe,strength)
-        }
-        return null
+        val strength=strongestSafeStrength(source,grid,checkCancelled) ?: return null
+        checkCancelled()
+        val safe=renderAtStrength(source,grid,strength,hash,checkCancelled)
+            ?: throw IllegalStateException("Single-scan damage gate disagreed with final pixels")
+        return StrengthSelection(safe,strength)
     }
 
     private fun renderAtStrength(source:Bitmap,grid:LearnedCoefficientGrid,
