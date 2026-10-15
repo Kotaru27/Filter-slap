@@ -17,6 +17,7 @@ import com.example.engine.v8.CandidateAssessment
 import com.example.engine.v9.SpatialIllumination
 import com.example.engine.v9.SpatialQuality
 import com.example.engine.v9.ChromaticIntegrity
+import com.example.engine.learned.LearnedOfflineCandidate
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlin.math.abs
@@ -25,6 +26,18 @@ import kotlin.math.min
 
 /** Prepare once, render the SAME recipe for screen and export. */
 object OfflineEnhancer {
+    /**
+     * Future approved-model integration seam: explicit preview ONLY.
+     * This does not change normal process(), chosen recipes, screen rendering,
+     * or export behavior. No approved model weights ship in this research APK.
+     */
+    internal fun previewApprovedLearnedModel(
+        context: Context, source: Bitmap, approvedModelSha256: String?,
+        checkCancelled: () -> Unit = {}
+    ): LearnedOfflineCandidate.Preview? =
+        LearnedOfflineCandidate.previewIfApproved(context,source,
+            approvedModelSha256,"global",checkCancelled)
+
     fun process(context: Context, input: Bitmap, analysis: AnalysisResult,
                 checkCancelled: () -> Unit = {}): RenderResult {
         var recipe=prepare(context,input,analysis,checkCancelled)
