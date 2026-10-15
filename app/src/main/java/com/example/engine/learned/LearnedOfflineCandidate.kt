@@ -124,8 +124,10 @@ internal object LearnedOfflineCandidate {
      */
     internal fun previewApprovedBytes(source:Bitmap,modelBytes:ByteArray,
                                       approvedSha256:String,mode:String="global",
-                                      checkCancelled:()->Unit={},
-                                      observeDamage:((DamageReport)->Unit)?=null):Preview? {
+                                      observeDamage:((DamageReport)->Unit)?=null,
+                                      checkCancelled:()->Unit={}):Preview? {
+        // Cancellation MUST be the last argument, so a Kotlin trailing
+        // lambda always cancels work rather than accidentally observing harm.
         val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
         return renderCandidate(source,grid,hash,checkCancelled,observeDamage)
     }
@@ -139,6 +141,7 @@ internal object LearnedOfflineCandidate {
         val name="learned_${mode}_predictor.onnx"
         // Package model bytes are always explicitly pinned. No network.
         val bytes=context.assets.open(name).use { it.readBytes() }
-        return previewApprovedBytes(source,bytes,approvedSha256,mode,checkCancelled)
+        return previewApprovedBytes(source,bytes,approvedSha256,mode,
+            checkCancelled=checkCancelled)
     }
 }
