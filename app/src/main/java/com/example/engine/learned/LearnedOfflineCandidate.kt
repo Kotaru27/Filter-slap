@@ -88,14 +88,14 @@ internal object LearnedOfflineCandidate {
     private fun attenuatePixel(original:Int,learned:Int,strength:Float):Int {
         if(strength>=1f) return learned
         if(strength<=0f) return original
-        var rgba=original and -0x1000000
-        for(shift in intArrayOf(16,8,0)) {
+        // Scalar byte operations only; no heap allocation per image pixel.
+        fun ch(shift:Int):Int {
             val src=(original ushr shift) and 255
             val dst=(learned ushr shift) and 255
-            val blended=(src+(dst-src)*strength+.5f).toInt().coerceIn(0,255)
-            rgba=rgba or (blended shl shift)
+            return (src+(dst-src)*strength+.5f).toInt().coerceIn(0,255)
         }
-        return rgba
+        return (original and -0x1000000) or
+            (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
     }
 
     data class StrengthSelection(val preview:Preview,val strength:Float)
