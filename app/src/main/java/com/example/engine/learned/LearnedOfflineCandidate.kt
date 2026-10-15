@@ -31,14 +31,11 @@ internal object LearnedOfflineCandidate {
         return hash
     }
 
-    private fun predict(context:Context,source:Bitmap,assetName:String,
-                        pin:String,checkCancelled:()->Unit):Pair<LearnedCoefficientGrid,String> {
-        require(assetName in setOf("learned_global_predictor.onnx",
-            "learned_spatial_predictor.onnx")) { "Unknown model asset path" }
+    private fun predictBytes(source:Bitmap,bytes:ByteArray,pin:String,
+                             expectedMode:String,checkCancelled:()->Unit):Pair<LearnedCoefficientGrid,String> {
+        require(bytes.size in 1..12_000_000) { "Unexpected offline model size" }
+        require(expectedMode=="global" || expectedMode=="spatial")
         checkCancelled()
-        // This asset does NOT ship today. The approved-weight build pipeline
-        // must provide a SHA pin before any candidate can be requested.
-        val bytes=context.assets.open(assetName).use { it.readBytes() }
         val hash=checkedSha256(bytes,pin)
         val preview=Bitmap.createScaledBitmap(source,CONTEXT,CONTEXT,true)
         val sourcePixels=IntArray(CONTEXT*CONTEXT)
@@ -67,6 +64,10 @@ internal object LearnedOfflineCandidate {
                     require(shape.size==5 && shape[0]==1L && shape[1]==12L &&
                         shape[2]==8L && shape[3] in setOf(1L,16L) &&
                         shape[4]==shape[3]) { "Incompatible learned ONNX output shape" }
+                    val expectedGrid=if(expectedMode=="global")1L else 16L
+                    require(shape[3]==expectedGrid) {
+                        "Wrong learned model architecture for requested mode"
+                    }
                     val expectedSize=shape.fold(1L) { a,b -> a*b }
                     require(expectedSize in 1..(12*8*16*16).toLong())
                     val values=FloatArray(expectedSize.toInt())
@@ -81,7 +82,8 @@ internal object LearnedOfflineCandidate {
 
     /** Safely exports candidate at native resolution using bounded row buffers. */
     fun renderCandidate(source:Bitmap,grid:LearnedCoefficientGrid,
-                        hash:String="research-probe",checkCancelled:()->Unit={}):Preview? {
+                        hash:String="research-probe",checkCancelled:()->Unit={},
+                        observeDamage:((DamageReport)->Unit)?=null):Preview? {
         require(!source.isRecycled && source.width>0 && source.height>0)
         val output=Bitmap.createBitmap(source.width,source.height,Bitmap.Config.ARGB_8888)
         val src=IntArray(source.width)
@@ -101,6 +103,9 @@ internal object LearnedOfflineCandidate {
                 output.setPixels(dest,0,source.width,0,y,source.width,1)
             }
             val report=damages.report()
+            // Research-only observer: report factual harm metrics even if
+            // the candidate is rejected. Does NOT alter acceptance thresholds.
+            observeDamage?.invoke(report)
             if(!report.safe) {
                 output.recycle()
                 return null
@@ -112,6 +117,21 @@ internal object LearnedOfflineCandidate {
         }
     }
 
+    /**
+     * Explicit in-memory offline model pathway for a future user-owned or
+     * distribution-cleared checkpoint. Every byte is SHA-pinned before ORT
+     * executes. This is not wired to the main app editing flow.
+     */
+    internal fun previewApprovedBytes(source:Bitmap,modelBytes:ByteArray,
+                                      approvedSha256:String,mode:String="global",
+                                      observeDamage:((DamageReport)->Unit)?=null,
+                                      checkCancelled:()->Unit={}):Preview? {
+        // Cancellation MUST be the last argument, so a Kotlin trailing
+        // lambda always cancels work rather than accidentally observing harm.
+        val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
+        return renderCandidate(source,grid,hash,checkCancelled,observeDamage)
+    }
+
     /** Return null if no strictly approved bundled model is available. */
     fun previewIfApproved(context:Context,source:Bitmap,
                           approvedSha256:String?,mode:String="global",
@@ -119,7 +139,9 @@ internal object LearnedOfflineCandidate {
         if(approvedSha256.isNullOrBlank()) return null
         require(mode=="global"||mode=="spatial")
         val name="learned_${mode}_predictor.onnx"
-        val (grid,hash)=predict(context,source,name,approvedSha256,checkCancelled)
-        return renderCandidate(source,grid,hash,checkCancelled)
+        // Package model bytes are always explicitly pinned. No network.
+        val bytes=context.assets.open(name).use { it.readBytes() }
+        return previewApprovedBytes(source,bytes,approvedSha256,mode,
+            checkCancelled=checkCancelled)
     }
 }
