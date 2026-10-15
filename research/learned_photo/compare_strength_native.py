@@ -18,6 +18,8 @@ def compare(root,model_output,native_output,baseline_output):
     summary_file=model_output/"public_aggregate_metrics.json"
     summary=json.loads(summary_file.read_text())
     mode=summary["winning_mode"]
+    provenance=json.loads((root/"provenance-private.json").read_text())
+    test_offset=int(provenance.get("test_offset",0))
     source_files=sorted((root/"pairs"/"test").glob("*_source.png"))
     if len(source_files)!=16:raise ValueError("Expected exactly sixteen test sources")
     with (native_output/"decisions.csv").open(newline="") as f:
@@ -81,7 +83,9 @@ def compare(root,model_output,native_output,baseline_output):
       "ties":int((np.abs(diff)<=1.e-5).sum()),
       "mean_paired_improvement_bootstrap_95pct":[float(lo),float(hi)],
       "android_vs_strength_scaled_torch_mean_rgb_l1":float(np.mean(errors)) if errors else None,
-      "note":"Previous study inspected this test cohort. Results are NOT unbiased heldout generalization.",
+      "test_offset_records_in_official_testing_split":test_offset,
+      "different_from_original_exploratory_cohort":test_offset>=64,
+      "note":"Independent test range was predeclared in dataset preparation. Even independent RGB error is not a human preference or safety certificate.",
       "noncommercial_dataset_model_cannot_ship":True,
       "no_blind_human_quality_evidence":True,
       "approved_for_release":False}
