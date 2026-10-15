@@ -82,14 +82,12 @@ jobs:
           if-no-files-found: warn
       - name: Confirm no unlicensed learned AI predictor was bundled
         run: |
-          ! unzip -Z1 app/build/outputs/apk/debug/FilterSlap-V9.5-ai-bridge-NO-MODEL.apk | grep -E '^assets/learned_(global|spatial)_predictor\\.onnx
-        uses: actions/upload-artifact@v4
-        with:
-          name: FilterSlap-V9.5-AI-runtime-bridge-NO-WEIGHTS-NOT-QUALITY-UPGRADE
-          path: app/build/outputs/apk/debug/FilterSlap-V9.5-ai-bridge-NO-MODEL.apk
-          if-no-files-found: error
-
-          echo "AI bridge present, actual learned model absent. Legacy V9.3 editing remains default."
+          set -euo pipefail
+          if unzip -Z1 app/build/outputs/apk/debug/FilterSlap-V9.5-ai-bridge-NO-MODEL.apk | grep -Eq '^assets/learned_(global|spatial)_predictor\.onnx$'; then
+            echo "ERROR: Unapproved learned model asset present."
+            exit 1
+          fi
+          echo "No learned-model weights bundled; V9.3 remains the active renderer."
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
