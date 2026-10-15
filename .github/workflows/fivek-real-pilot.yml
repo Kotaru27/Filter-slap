@@ -37,19 +37,19 @@ jobs:
       - name: Acquire actual FiveK DNGs + Expert C TIFFs and convert to aligned sRGB
         run: |
           python research/learned_photo/prepare_fivek_pilot.py \
-            --root "$PILOT_DATA" --train 12 --val 4 --test 4 --max-edge 384
+            --root "$PILOT_DATA" --train 64 --val 16 --test 16 --max-edge 384
       - name: Train both AI editors and evaluate held-out expert photos
         run: |
           python research/learned_photo/run_real_pilot.py \
             --manifest "$PILOT_DATA/manifest.csv" \
-            --out "$PILOT_OUTPUT" --epochs 4
+            --out "$PILOT_OUTPUT" --epochs 6 --min-train 64 --min-val 16 --min-test 16
       - name: Audit data isolation and no Android modification
         run: |
           test -f "$PILOT_OUTPUT/public_aggregate_metrics.json"
           python - <<'PY'
           import json,os,pathlib
           report=json.loads((pathlib.Path(os.environ["PILOT_OUTPUT"])/"public_aggregate_metrics.json").read_text())
-          assert (report["n_train"],report["n_val"],report["n_heldout_test"])==(12,4,4)
+          assert (report["n_train"],report["n_val"],report["n_heldout_test"])==(64,16,16)
           assert not report["approved_for_android"]
           print("Research test completed. No photo/weights release.")
           PY
@@ -58,7 +58,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: real-FiveK-expert-pilot-AGGREGATE-ONLY-NOT-RELEASE
+          name: real-FiveK-expert-96-pair-pilot-METRICS-ONLY-NOT-RELEASE
           path: /tmp/trained-models-not-for-release/public_aggregate_metrics.json
           retention-days: 7
           if-no-files-found: error
