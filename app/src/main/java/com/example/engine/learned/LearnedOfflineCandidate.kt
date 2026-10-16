@@ -128,6 +128,27 @@ internal object LearnedOfflineCandidate {
             ?.let{STRENGTHS[it]}
     }
 
+    /**
+     * Immutable preview-approved recipe. The ONNX predictor runs once on the
+     * image the user saw; export applies the SAME grid and selected strength.
+     * All full-resolution output is rechecked against unchanged V9 safety rules.
+     */
+    data class Prepared(val grid:LearnedCoefficientGrid,val strength:Float,
+                        val fingerprint:String)
+
+    internal fun prepareApprovedBytes(source:Bitmap,modelBytes:ByteArray,
+        approvedSha256:String,mode:String="global",
+        checkCancelled:()->Unit={}):Prepared? {
+        val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
+        val strength=strongestSafeStrength(source,grid,checkCancelled) ?: return null
+        return Prepared(grid,strength,hash)
+    }
+
+    internal fun renderPrepared(source:Bitmap,prepared:Prepared,
+        checkCancelled:()->Unit={}):Preview? =
+        renderAtStrength(source,prepared.grid,prepared.strength,
+            prepared.fingerprint,checkCancelled)
+
     internal fun strongestSafeStrengthForTest(
         source:Bitmap,grid:LearnedCoefficientGrid,
         checkCancelled:()->Unit={}
