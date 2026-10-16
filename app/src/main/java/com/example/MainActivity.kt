@@ -387,18 +387,34 @@ fun FilterSlapApp() {
                 try {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
-                        val exportRender = OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
-                        val rendered = exportRender.bitmap
-                        saveProfile = exportRender.appliedPlan.profileName
+                        val learnedRecipe=activeLearned
+                        val legacy=if(learnedRecipe==null)
+                            OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
+                            else null
+                        val learned=if(learnedRecipe!=null)
+                            LearnedOfflineCandidate.renderPrepared(cropped,learnedRecipe) {
+                                jobContext.ensureActive()
+                            } ?: throw java.io.IOException(
+                                "AI export failed native-resolution safety. No unreviewed substitute saved.")
+                            else null
+                        val rendered=learned?.bitmap ?: requireNotNull(legacy).bitmap
+                        saveProfile=if(learned!=null) "USER_IMPORTED_ONNX_GLOBAL"
+                            else requireNotNull(legacy).appliedPlan.profileName
                         try {
                             outputSize = "${rendered.width} × ${rendered.height}"
-                            // Export renders the immutable recipe the preview approved.
-                            val appliedExportNotes = exportRender.appliedPlan.decisions.map { dec ->
-                                "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
-                            }
                             saveNotes.clear()
-                            saveNotes.add(exportRender.outcome!!.summary())
-                            saveNotes.addAll(appliedExportNotes)
+                            if(learned!=null) {
+                                saveNotes.add("Imported ONNX model, strength ${(learnedRecipe!!.strength*100).toInt()}%")
+                                saveNotes.add("Full-resolution V9 safety: ${learned.damage.safe}")
+                                saveNotes.add("SHA-256: ${learned.fingerprint}")
+                            } else {
+                                val actual=requireNotNull(legacy)
+                                val appliedExportNotes = actual.appliedPlan.decisions.map { dec ->
+                                    "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
+                                }
+                                saveNotes.add(actual.outcome!!.summary())
+                                saveNotes.addAll(appliedExportNotes)
+                            }
                             savedUri = saveBitmapToGallery(context, rendered)
                                 ?: throw java.io.IOException("Gallery export failed")
                         } finally {
