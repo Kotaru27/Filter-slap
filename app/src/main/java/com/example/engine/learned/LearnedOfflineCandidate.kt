@@ -80,10 +80,80 @@ internal object LearnedOfflineCandidate {
         }
     }
 
-    /** Safely exports candidate at native resolution using bounded row buffers. */
-    fun renderCandidate(source:Bitmap,grid:LearnedCoefficientGrid,
-                        hash:String="research-probe",checkCancelled:()->Unit={},
-                        observeDamage:((DamageReport)->Unit)?=null):Preview? {
+    /**
+     * Research-only strength attenuation preserves the original ARGB alpha,
+     * zero strength is mathematically the unedited source, and unit strength
+     * is bitwise identical to the existing learned renderer.
+     */
+    private fun attenuatePixel(original:Int,learned:Int,strength:Float):Int {
+        if(strength>=1f) return learned
+        if(strength<=0f) return original
+        // Scalar byte operations only; no heap allocation per image pixel.
+        fun ch(shift:Int):Int {
+            val src=(original ushr shift) and 255
+            val dst=(learned ushr shift) and 255
+            return (src+(dst-src)*strength+.5f).toInt().coerceIn(0,255)
+        }
+        return (original and -0x1000000) or
+            (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+    }
+
+    data class StrengthSelection(val preview:Preview,val strength:Float)
+    private val STRENGTHS=floatArrayOf(1f,.75f,.5f,.25f,.125f)
+
+    /**
+     * Single full-resolution scan obtains exact damage evidence for every
+     * candidate strength. Only ONE expensive guided-grid interpolation per
+     * pixel, instead of up to five full re-renders. Strictly preserves
+     * candidate order and the unchanged V9 DamageReport.safe decision.
+     */
+    private fun strongestSafeStrength(source:Bitmap,grid:LearnedCoefficientGrid,
+                                      checkCancelled:()->Unit):Float? {
+        val evidence=Array(STRENGTHS.size) { DamageAccumulator() }
+        val row=IntArray(source.width)
+        val invW=1f/(source.width-1).coerceAtLeast(1)
+        val invH=1f/(source.height-1).coerceAtLeast(1)
+        for(y in 0 until source.height) {
+            checkCancelled()
+            source.getPixels(row,0,source.width,0,y,source.width,1)
+            for(x in row.indices) {
+                val original=row[x]
+                val predicted=grid.pixel(original,x*invW,y*invH)
+                for(i in STRENGTHS.indices)
+                    evidence[i].add(original,
+                        attenuatePixel(original,predicted,STRENGTHS[i]))
+            }
+        }
+        return STRENGTHS.indices.firstOrNull{evidence[it].report().safe}
+            ?.let{STRENGTHS[it]}
+    }
+
+    internal fun strongestSafeStrengthForTest(
+        source:Bitmap,grid:LearnedCoefficientGrid,
+        checkCancelled:()->Unit={}
+    ):Float?=strongestSafeStrength(source,grid,checkCancelled)
+
+    /**
+     * Train/validation research path only: choose the strongest candidate
+     * satisfying the exact original V9 damage policy; never use the held-out
+     * expert retouch to choose per-photo strength.
+     */
+    internal fun previewApprovedStrengthSearchBytes(
+        source:Bitmap,modelBytes:ByteArray,approvedSha256:String,
+        mode:String="global",checkCancelled:()->Unit={}
+    ):StrengthSelection? {
+        val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
+        val strength=strongestSafeStrength(source,grid,checkCancelled) ?: return null
+        checkCancelled()
+        val safe=renderAtStrength(source,grid,strength,hash,checkCancelled)
+            ?: throw IllegalStateException("Single-scan damage gate disagreed with final pixels")
+        return StrengthSelection(safe,strength)
+    }
+
+    private fun renderAtStrength(source:Bitmap,grid:LearnedCoefficientGrid,
+        strength:Float,hash:String,checkCancelled:()->Unit={},
+        observeDamage:((DamageReport)->Unit)?=null):Preview? {
+        require(strength.isFinite() && strength in 0f..1f)
         require(!source.isRecycled && source.width>0 && source.height>0)
         val output=Bitmap.createBitmap(source.width,source.height,Bitmap.Config.ARGB_8888)
         val src=IntArray(source.width)
@@ -96,7 +166,8 @@ internal object LearnedOfflineCandidate {
                 checkCancelled()
                 source.getPixels(src,0,source.width,0,y,source.width,1)
                 for(x in src.indices) {
-                    val candidate=grid.pixel(src[x],x*invW,y*invH)
+                    val learned=grid.pixel(src[x],x*invW,y*invH)
+                    val candidate=attenuatePixel(src[x],learned,strength)
                     dest[x]=candidate
                     damages.add(src[x],candidate)
                 }
@@ -116,6 +187,18 @@ internal object LearnedOfflineCandidate {
             throw t
         }
     }
+
+    /** Test-only research hook; unchanged DamageReport.safe gate. */
+    internal fun renderCandidateAtStrength(
+        source:Bitmap,grid:LearnedCoefficientGrid,strength:Float,
+        checkCancelled:()->Unit={}
+    ):Preview?=renderAtStrength(source,grid,strength,"strength-study",checkCancelled)
+
+    /** Existing public candidate path, exact legacy strength one. */
+    fun renderCandidate(source:Bitmap,grid:LearnedCoefficientGrid,
+                        hash:String="research-probe",checkCancelled:()->Unit={},
+                        observeDamage:((DamageReport)->Unit)?=null):Preview? =
+        renderAtStrength(source,grid,1f,hash,checkCancelled,observeDamage)
 
     /**
      * Explicit in-memory offline model pathway for a future user-owned or
