@@ -159,6 +159,7 @@ internal object LearnedOfflineCandidate {
         val src=IntArray(source.width)
         val dest=IntArray(source.width)
         val damages=DamageAccumulator()
+        val naturalness=LearnedNaturalnessAccumulator()
         try {
             val invW=1f/(source.width-1).coerceAtLeast(1)
             val invH=1f/(source.height-1).coerceAtLeast(1)
@@ -170,6 +171,7 @@ internal object LearnedOfflineCandidate {
                     val candidate=attenuatePixel(src[x],learned,strength)
                     dest[x]=candidate
                     damages.add(src[x],candidate)
+                    naturalness.add(src[x],candidate)
                 }
                 output.setPixels(dest,0,source.width,0,y,source.width,1)
             }
@@ -177,7 +179,9 @@ internal object LearnedOfflineCandidate {
             // Research-only observer: report factual harm metrics even if
             // the candidate is rejected. Does NOT alter acceptance thresholds.
             observeDamage?.invoke(report)
-            if(!report.safe) {
+            // Retain every original V9 safety limit; reject additionally
+            // when an edit corrupts neutrals or a naturally low-key mood.
+            if(!report.safe || !naturalness.verdict().safe) {
                 output.recycle()
                 return null
             }
