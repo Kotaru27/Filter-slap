@@ -471,6 +471,52 @@ fun FilterSlapApp() {
         else Toast.makeText(context, "Storage permission required to save", Toast.LENGTH_SHORT).show()
     }
 
+    val aiFilePicker=rememberLauncherForActivityResult(
+        contract=ActivityResultContracts.OpenDocument()
+    ) { uri:Uri? ->
+        if(uri!=null) coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val digest=LocalLearnedModelStore.importGlobal(context,uri)
+                withContext(Dispatchers.Main) {
+                    hasLocalAiModel=true
+                    Toast.makeText(context,"AI model checked: ${digest.take(12)}",
+                        Toast.LENGTH_LONG).show()
+                    if(originalBitmap!=null)applyEdits(selectedCrop)
+                }
+            } catch(error:Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context,"AI model rejected: ${error.message}",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    if(showLocalAiDialog) {
+        AlertDialog(
+            onDismissRequest={showLocalAiDialog=false},
+            title={Text("Optional offline AI model")},
+            text={Text("Use only an ONNX global photo model you have permission to use. "+
+                "No model or photos are uploaded. This app does not include rights-restricted "+
+                "expert-trained weights. The current V9 editor remains a safety fallback.")},
+            confirmButton={
+                TextButton(onClick={
+                    showLocalAiDialog=false
+                    aiFilePicker.launch(arrayOf("*/*"))
+                }) {Text("Choose local model")}
+            },
+            dismissButton={
+                TextButton(onClick={
+                    showLocalAiDialog=false
+                    if(hasLocalAiModel) {
+                        LocalLearnedModelStore.clear(context)
+                        hasLocalAiModel=false
+                        if(originalBitmap!=null)applyEdits(selectedCrop)
+                    }
+                }) {Text(if(hasLocalAiModel)"Remove model" else "Cancel")}
+            }
+        )
+    }
+
     // Comparison must use the same framing as the edited image.
     val comparisonBitmap = remember(originalBitmap, selectedCrop) {
         originalBitmap?.let { cropBitmap(it, selectedCrop.aspectRatio) }
@@ -535,6 +581,8 @@ fun FilterSlapApp() {
                 activePlan = activePlan,
                 outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
+                hasLocalAiModel=hasLocalAiModel,
+                onModelSettings={showLocalAiDialog=true},
                 onHold = { holding -> isHolding = holding },
                 onDiscard = ::discard,
                 onShowAnalysis = { showAnalysis = true },
@@ -620,6 +668,8 @@ private fun EditorScreen(
     activePlan: EditPlan?,
     outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
+    hasLocalAiModel:Boolean,
+    onModelSettings:()->Unit,
     onHold: (Boolean) -> Unit,
     onDiscard: () -> Unit,
     onShowAnalysis: () -> Unit,
@@ -696,9 +746,17 @@ private fun EditorScreen(
             GlassIconButton(onClick = onDiscard, contentDescription = "Discard") {
                 Icon(Icons.Default.Close, contentDescription = "Discard", tint = TextPrimary, modifier = Modifier.size(20.dp))
             }
-            if (hasAnalysis) {
-                GlassIconButton(onClick = onShowAnalysis, contentDescription = "Analysis report") {
-                    Icon(Icons.Default.Info, contentDescription = "Analysis report", tint = TextPrimary, modifier = Modifier.size(20.dp))
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                TextButton(onClick=onModelSettings) {
+                    Text(if(hasLocalAiModel) "AI · local" else "AI model",
+                        color=if(hasLocalAiModel)Accent else TextSecondary,
+                        fontSize=12.sp)
+                }
+                if(hasAnalysis) {
+                    GlassIconButton(onClick=onShowAnalysis,contentDescription="Analysis report") {
+                        Icon(Icons.Default.Info,contentDescription="Analysis report",
+                            tint=TextPrimary,modifier=Modifier.size(20.dp))
+                    }
                 }
             }
         }
@@ -712,6 +770,11 @@ private fun EditorScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            if(outcome?.engine=="USER_IMPORTED_ONNX_GLOBAL") {
+                Text("LOCAL AI · GUARDED EDIT",color=Accent,fontSize=12.sp,
+                    fontWeight=FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+            }
             activePlan?.let { plan ->
                 Text(
                     outcome?.status ?: "Auto enhance",
