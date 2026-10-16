@@ -68,6 +68,8 @@ import kotlinx.coroutines.ensureActive
 import com.example.engine.v7.EditRecipe
 import com.example.engine.v7.EnhancementOutcome
 import com.example.engine.v7.OfflineEnhancer
+import com.example.engine.learned.LearnedOfflineCandidate
+import com.example.engine.learned.LocalLearnedModelStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -118,6 +120,9 @@ fun FilterSlapApp() {
     var reportAnalysis by remember { mutableStateOf<AnalysisResult?>(null) }
     var activePlan by remember { mutableStateOf<EditPlan?>(null) }
     var activeRecipe by remember { mutableStateOf<EditRecipe?>(null) }
+    var activeLearned by remember { mutableStateOf<LearnedOfflineCandidate.Prepared?>(null) }
+    var hasLocalAiModel by remember { mutableStateOf(LocalLearnedModelStore.load(context)!=null) }
+    var showLocalAiDialog by remember { mutableStateOf(false) }
     var activeOutcome by remember { mutableStateOf<EnhancementOutcome?>(null) }
     var photoRequest by remember { mutableLongStateOf(0L) }
     var renderRequest by remember { mutableLongStateOf(0L) }
@@ -143,6 +148,7 @@ fun FilterSlapApp() {
         val request = ++renderRequest
         val photo = photoRequest
         activeRecipe = null
+        activeLearned = null
         activeOutcome = null
         isProcessing = true
         processingJob = coroutineScope.launch(Dispatchers.Default) {
@@ -158,7 +164,42 @@ fun FilterSlapApp() {
                 unpublished = render.bitmap
                 checkCancelled()
                 val plan = render.appliedPlan
-                val outcome = render.outcome!!
+                val legacyOutcome = render.outcome!!
+                var learnedRecipe:LearnedOfflineCandidate.Prepared?=null
+                var learnedPreview:LearnedOfflineCandidate.Preview?=null
+                val imported=LocalLearnedModelStore.load(context)
+                if(imported!=null) {
+                    try {
+                        val proposal=LearnedOfflineCandidate.prepareApprovedBytes(
+                            frame,imported.bytes,imported.sha256,"global",checkCancelled)
+                        if(proposal!=null) {
+                            val ready=LearnedOfflineCandidate.renderPrepared(
+                                frame,proposal,checkCancelled)
+                            if(ready!=null) {
+                                learnedRecipe=proposal
+                                learnedPreview=ready
+                                unpublished=ready.bitmap
+                                render.bitmap.recycle()
+                            }
+                        }
+                    }catch(cancelled:CancellationException){throw cancelled}
+                    catch(error:Exception){
+                        android.util.Log.w("FilterSlap","User model could not improve photo safely; V9 retained",error)
+                    }
+                }
+                val outcome=if(learnedPreview!=null && learnedRecipe!=null)
+                    EnhancementOutcome(
+                        status="Experimental learned edit",
+                        engine="USER_IMPORTED_ONNX_GLOBAL",
+                        recipeId=legacyOutcome.recipeId,
+                        modelFingerprint=learnedRecipe.fingerprint,
+                        modelStrength=learnedRecipe.strength,
+                        maskUsed=false,
+                        damage=learnedPreview.damage,
+                        reasons=listOf("V9 pixel safety gate retained",
+                            "User-imported ONNX model executed offline",
+                            "Export must separately pass native-resolution safety")
+                    ) else legacyOutcome
                 val details = plan.decisions.map { decision ->
                     "${decision.parameter}${if (decision.regionMask != "Global") " (${decision.regionMask})" else ""}"
                 }
@@ -179,15 +220,25 @@ fun FilterSlapApp() {
                             add("Neutral-anchor white balance applied")
                     }.joinToString(", ").ifEmpty { "Source colors retained" }
                 ))
+                val actualReport=if(learnedRecipe!=null)
+                    enriched.copy(report=enriched.report.copy(
+                        toneAdjustments="Whole-frame learned affine adjustment; guarded strength",
+                        colorAdjustments="User-owned ONNX model at ${(learnedRecipe.strength*100).toInt()}% strength"
+                    )) else enriched
                 withContext(Dispatchers.Main) {
                     if (request == renderRequest && photo == photoRequest) {
-                        editedBitmap = render.bitmap
+                        editedBitmap = unpublished
                         unpublished = null
-                        activePlan = plan
+                        activePlan = if(learnedRecipe==null)plan else null
                         activeRecipe = render.recipe
+                        activeLearned = learnedRecipe
                         activeOutcome = outcome
-                        reportAnalysis = enriched
-                        analysisNotes = listOf(outcome.status) + details
+                        reportAnalysis = actualReport
+                        analysisNotes = if(learnedRecipe!=null)
+                            listOf("User-imported ONNX global model at ${(learnedRecipe.strength*100).toInt()}%",
+                                "Native V9 safety criteria passed",
+                                "Export will use this exact model prediction")
+                            else listOf(outcome.status) + details
                         stageProgress = 1f
                         isProcessing = false
                     }
@@ -224,6 +275,7 @@ fun FilterSlapApp() {
             val request = ++photoRequest
             renderRequest++
             activeRecipe = null
+            activeLearned = null
             activeOutcome = null
             analysisNotes = emptyList()
             originalBitmap = null
@@ -298,6 +350,7 @@ fun FilterSlapApp() {
         photoRequest++
         renderRequest++
         activeRecipe = null
+        activeLearned = null
         activeOutcome = null
         decodeJob?.cancel()
         processingJob?.cancel()
@@ -322,6 +375,7 @@ fun FilterSlapApp() {
         val crop = selectedCrop
         val recipe = activeRecipe ?: return
         val analysis = reportAnalysis ?: return
+        val approvedLearnedAtSave=activeLearned
         var saveProfile = activePlan?.profileName ?: "AUTO"
         val saveNotes = analysisNotes.toMutableList()
         isSaving = true
@@ -335,18 +389,34 @@ fun FilterSlapApp() {
                 try {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
-                        val exportRender = OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
-                        val rendered = exportRender.bitmap
-                        saveProfile = exportRender.appliedPlan.profileName
+                        val learnedRecipe=approvedLearnedAtSave
+                        val legacy=if(learnedRecipe==null)
+                            OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
+                            else null
+                        val learned=if(learnedRecipe!=null)
+                            LearnedOfflineCandidate.renderPrepared(cropped,learnedRecipe) {
+                                jobContext.ensureActive()
+                            } ?: throw java.io.IOException(
+                                "AI export failed native-resolution safety. No unreviewed substitute saved.")
+                            else null
+                        val rendered=learned?.bitmap ?: requireNotNull(legacy).bitmap
+                        saveProfile=if(learned!=null) "USER_IMPORTED_ONNX_GLOBAL"
+                            else requireNotNull(legacy).appliedPlan.profileName
                         try {
                             outputSize = "${rendered.width} × ${rendered.height}"
-                            // Export renders the immutable recipe the preview approved.
-                            val appliedExportNotes = exportRender.appliedPlan.decisions.map { dec ->
-                                "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
-                            }
                             saveNotes.clear()
-                            saveNotes.add(exportRender.outcome!!.summary())
-                            saveNotes.addAll(appliedExportNotes)
+                            if(learned!=null) {
+                                saveNotes.add("Imported ONNX model, strength ${(learnedRecipe!!.strength*100).toInt()}%")
+                                saveNotes.add("Full-resolution V9 safety: ${learned.damage.safe}")
+                                saveNotes.add("SHA-256: ${learned.fingerprint}")
+                            } else {
+                                val actual=requireNotNull(legacy)
+                                val appliedExportNotes = actual.appliedPlan.decisions.map { dec ->
+                                    "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
+                                }
+                                saveNotes.add(actual.outcome!!.summary())
+                                saveNotes.addAll(appliedExportNotes)
+                            }
                             savedUri = saveBitmapToGallery(context, rendered)
                                 ?: throw java.io.IOException("Gallery export failed")
                         } finally {
@@ -403,6 +473,52 @@ fun FilterSlapApp() {
         else Toast.makeText(context, "Storage permission required to save", Toast.LENGTH_SHORT).show()
     }
 
+    val aiFilePicker=rememberLauncherForActivityResult(
+        contract=ActivityResultContracts.OpenDocument()
+    ) { uri:Uri? ->
+        if(uri!=null) coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val digest=LocalLearnedModelStore.importGlobal(context,uri)
+                withContext(Dispatchers.Main) {
+                    hasLocalAiModel=true
+                    Toast.makeText(context,"AI model checked: ${digest.take(12)}",
+                        Toast.LENGTH_LONG).show()
+                    if(originalBitmap!=null)applyEdits(selectedCrop)
+                }
+            } catch(error:Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context,"AI model rejected: ${error.message}",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    if(showLocalAiDialog) {
+        AlertDialog(
+            onDismissRequest={showLocalAiDialog=false},
+            title={Text("Optional offline AI model")},
+            text={Text("Use only an ONNX global photo model you have permission to use. "+
+                "No model or photos are uploaded. This app does not include rights-restricted "+
+                "expert-trained weights. The current V9 editor remains a safety fallback.")},
+            confirmButton={
+                TextButton(onClick={
+                    showLocalAiDialog=false
+                    aiFilePicker.launch(arrayOf("*/*"))
+                }) {Text("Choose local model")}
+            },
+            dismissButton={
+                TextButton(onClick={
+                    showLocalAiDialog=false
+                    if(hasLocalAiModel) {
+                        LocalLearnedModelStore.clear(context)
+                        hasLocalAiModel=false
+                        if(originalBitmap!=null)applyEdits(selectedCrop)
+                    }
+                }) {Text(if(hasLocalAiModel)"Remove model" else "Cancel")}
+            }
+        )
+    }
+
     // Comparison must use the same framing as the edited image.
     val comparisonBitmap = remember(originalBitmap, selectedCrop) {
         originalBitmap?.let { cropBitmap(it, selectedCrop.aspectRatio) }
@@ -424,6 +540,7 @@ fun FilterSlapApp() {
                 editedBitmap = null
                 activePlan = null
                 activeRecipe = null
+                activeLearned = null
                 activeOutcome = null
                 reportAnalysis = null
                 selectedCrop = frame
@@ -466,6 +583,8 @@ fun FilterSlapApp() {
                 activePlan = activePlan,
                 outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
+                hasLocalAiModel=hasLocalAiModel,
+                onModelSettings={showLocalAiDialog=true},
                 onHold = { holding -> isHolding = holding },
                 onDiscard = ::discard,
                 onShowAnalysis = { showAnalysis = true },
@@ -551,6 +670,8 @@ private fun EditorScreen(
     activePlan: EditPlan?,
     outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
+    hasLocalAiModel:Boolean,
+    onModelSettings:()->Unit,
     onHold: (Boolean) -> Unit,
     onDiscard: () -> Unit,
     onShowAnalysis: () -> Unit,
@@ -627,9 +748,17 @@ private fun EditorScreen(
             GlassIconButton(onClick = onDiscard, contentDescription = "Discard") {
                 Icon(Icons.Default.Close, contentDescription = "Discard", tint = TextPrimary, modifier = Modifier.size(20.dp))
             }
-            if (hasAnalysis) {
-                GlassIconButton(onClick = onShowAnalysis, contentDescription = "Analysis report") {
-                    Icon(Icons.Default.Info, contentDescription = "Analysis report", tint = TextPrimary, modifier = Modifier.size(20.dp))
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                TextButton(onClick=onModelSettings) {
+                    Text(if(hasLocalAiModel) "AI · local" else "AI model",
+                        color=if(hasLocalAiModel)Accent else TextSecondary,
+                        fontSize=12.sp)
+                }
+                if(hasAnalysis) {
+                    GlassIconButton(onClick=onShowAnalysis,contentDescription="Analysis report") {
+                        Icon(Icons.Default.Info,contentDescription="Analysis report",
+                            tint=TextPrimary,modifier=Modifier.size(20.dp))
+                    }
                 }
             }
         }
@@ -643,6 +772,11 @@ private fun EditorScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            if(outcome?.engine=="USER_IMPORTED_ONNX_GLOBAL") {
+                Text("LOCAL AI · GUARDED EDIT",color=Accent,fontSize=12.sp,
+                    fontWeight=FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+            }
             activePlan?.let { plan ->
                 Text(
                     outcome?.status ?: "Auto enhance",

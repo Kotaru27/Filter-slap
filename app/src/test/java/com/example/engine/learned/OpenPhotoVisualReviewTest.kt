@@ -26,6 +26,8 @@ import java.security.MessageDigest
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class OpenPhotoVisualReviewTest {
     @Test fun renderCc0OpenPhotosThroughBothRealAndroidEngines() {
+        org.junit.Assume.assumeTrue("Needs explicitly supplied private research-trained model",
+            System.getenv("TRAINED_TEST_ONNX")!=null)
         val input=File(requireNotNull(System.getenv("OPEN_PHOTO_INPUT")))
         val destination=File(requireNotNull(System.getenv("OPEN_PHOTO_OUTPUT")))
         val model=File(requireNotNull(System.getenv("TRAINED_TEST_ONNX")))

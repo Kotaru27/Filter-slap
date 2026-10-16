@@ -24,6 +24,8 @@ import java.security.MessageDigest
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PublicVisualComparisonTest {
     @Test fun publicScenesMustExportOriginalV9AndGuardedLearnedOrFallback() {
+        org.junit.Assume.assumeTrue("Needs explicitly supplied private research-trained model",
+            System.getenv("TRAINED_TEST_ONNX")!=null)
         val input=File(requireNotNull(System.getenv("PUBLIC_VISUAL_INPUT")))
         val output=File(requireNotNull(System.getenv("PUBLIC_VISUAL_OUTPUT")))
         val model=File(requireNotNull(System.getenv("TRAINED_TEST_ONNX")))
