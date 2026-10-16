@@ -110,6 +110,7 @@ internal object LearnedOfflineCandidate {
     private fun strongestSafeStrength(source:Bitmap,grid:LearnedCoefficientGrid,
                                       checkCancelled:()->Unit):Float? {
         val evidence=Array(STRENGTHS.size) { DamageAccumulator() }
+        val naturalEvidence=Array(STRENGTHS.size) { LearnedNaturalnessAccumulator() }
         val row=IntArray(source.width)
         val invW=1f/(source.width-1).coerceAtLeast(1)
         val invH=1f/(source.height-1).coerceAtLeast(1)
@@ -119,13 +120,16 @@ internal object LearnedOfflineCandidate {
             for(x in row.indices) {
                 val original=row[x]
                 val predicted=grid.pixel(original,x*invW,y*invH)
-                for(i in STRENGTHS.indices)
-                    evidence[i].add(original,
-                        attenuatePixel(original,predicted,STRENGTHS[i]))
+                for(i in STRENGTHS.indices) {
+                    val candidate=attenuatePixel(original,predicted,STRENGTHS[i])
+                    evidence[i].add(original,candidate)
+                    naturalEvidence[i].add(original,candidate)
+                }
             }
         }
-        return STRENGTHS.indices.firstOrNull{evidence[it].report().safe}
-            ?.let{STRENGTHS[it]}
+        return STRENGTHS.indices.firstOrNull{
+            evidence[it].report().safe && naturalEvidence[it].verdict().safe
+        }?.let{STRENGTHS[it]}
     }
 
     internal fun strongestSafeStrengthForTest(
@@ -159,6 +163,7 @@ internal object LearnedOfflineCandidate {
         val src=IntArray(source.width)
         val dest=IntArray(source.width)
         val damages=DamageAccumulator()
+        val naturalness=LearnedNaturalnessAccumulator()
         try {
             val invW=1f/(source.width-1).coerceAtLeast(1)
             val invH=1f/(source.height-1).coerceAtLeast(1)
@@ -170,6 +175,7 @@ internal object LearnedOfflineCandidate {
                     val candidate=attenuatePixel(src[x],learned,strength)
                     dest[x]=candidate
                     damages.add(src[x],candidate)
+                    naturalness.add(src[x],candidate)
                 }
                 output.setPixels(dest,0,source.width,0,y,source.width,1)
             }
@@ -177,7 +183,9 @@ internal object LearnedOfflineCandidate {
             // Research-only observer: report factual harm metrics even if
             // the candidate is rejected. Does NOT alter acceptance thresholds.
             observeDamage?.invoke(report)
-            if(!report.safe) {
+            // Retain every original V9 safety limit; reject additionally
+            // when an edit corrupts neutrals or a naturally low-key mood.
+            if(!report.safe || !naturalness.verdict().safe) {
                 output.recycle()
                 return null
             }
