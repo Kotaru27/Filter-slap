@@ -110,6 +110,7 @@ internal object LearnedOfflineCandidate {
     private fun strongestSafeStrength(source:Bitmap,grid:LearnedCoefficientGrid,
                                       checkCancelled:()->Unit):Float? {
         val evidence=Array(STRENGTHS.size) { DamageAccumulator() }
+        val naturalEvidence=Array(STRENGTHS.size) { LearnedNaturalnessAccumulator() }
         val row=IntArray(source.width)
         val invW=1f/(source.width-1).coerceAtLeast(1)
         val invH=1f/(source.height-1).coerceAtLeast(1)
@@ -119,13 +120,16 @@ internal object LearnedOfflineCandidate {
             for(x in row.indices) {
                 val original=row[x]
                 val predicted=grid.pixel(original,x*invW,y*invH)
-                for(i in STRENGTHS.indices)
-                    evidence[i].add(original,
-                        attenuatePixel(original,predicted,STRENGTHS[i]))
+                for(i in STRENGTHS.indices) {
+                    val candidate=attenuatePixel(original,predicted,STRENGTHS[i])
+                    evidence[i].add(original,candidate)
+                    naturalEvidence[i].add(original,candidate)
+                }
             }
         }
-        return STRENGTHS.indices.firstOrNull{evidence[it].report().safe}
-            ?.let{STRENGTHS[it]}
+        return STRENGTHS.indices.firstOrNull{
+            evidence[it].report().safe && naturalEvidence[it].verdict().safe
+        }?.let{STRENGTHS[it]}
     }
 
     internal fun strongestSafeStrengthForTest(
