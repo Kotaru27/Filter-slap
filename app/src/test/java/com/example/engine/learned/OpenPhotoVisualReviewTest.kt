@@ -49,24 +49,25 @@ class OpenPhotoVisualReviewTest {
             try {
                 val analysis=ImageAnalyzer.analyze(source)
                 val render=OfflineEnhancer.process(context,source,analysis)
-                baseline=render.bitmap
+                val baselineImage=render.bitmap
+                baseline=baselineImage
                 require(render.outcome?.damage?.safe==true) { "V9 baseline failed" }
                 val candidate=LearnedOfflineCandidate.previewApprovedStrengthSearchBytes(
                     source,bytes,pin,mode)
                 if(candidate!=null) challenger=candidate.preview.bitmap
                 val accepted=candidate!=null
-                val chosen=challenger ?: baseline
+                val chosen=challenger ?: baselineImage
                 assertEquals(source.width,chosen.width)
                 assertEquals(source.height,chosen.height)
-                assertEquals(source.width,baseline.width)
-                assertEquals(source.height,baseline.height)
+                assertEquals(source.width,baselineImage.width)
+                assertEquals(source.height,baselineImage.height)
                 fun save(bitmap:Bitmap,tag:String) {
                     File(destination,"${id}_${tag}.png").outputStream().use { stream ->
                         assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,stream))
                     }
                 }
                 save(source,"source")
-                save(baseline,"v9")
+                save(baselineImage,"v9")
                 save(chosen,"challenger")
                 report += "$id,$mode,$accepted,${candidate?.strength ?: 0f},"+
                     "${candidate?.preview?.damage?.meanChange ?: 0f}"
