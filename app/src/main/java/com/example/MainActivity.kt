@@ -68,6 +68,8 @@ import kotlinx.coroutines.ensureActive
 import com.example.engine.v7.EditRecipe
 import com.example.engine.v7.EnhancementOutcome
 import com.example.engine.v7.OfflineEnhancer
+import com.example.engine.learned.LearnedOfflineCandidate
+import com.example.engine.learned.LocalLearnedModelStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -118,6 +120,9 @@ fun FilterSlapApp() {
     var reportAnalysis by remember { mutableStateOf<AnalysisResult?>(null) }
     var activePlan by remember { mutableStateOf<EditPlan?>(null) }
     var activeRecipe by remember { mutableStateOf<EditRecipe?>(null) }
+    var activeLearned by remember { mutableStateOf<LearnedOfflineCandidate.Prepared?>(null) }
+    var hasLocalAiModel by remember { mutableStateOf(LocalLearnedModelStore.load(context)!=null) }
+    var showLocalAiDialog by remember { mutableStateOf(false) }
     var activeOutcome by remember { mutableStateOf<EnhancementOutcome?>(null) }
     var photoRequest by remember { mutableLongStateOf(0L) }
     var renderRequest by remember { mutableLongStateOf(0L) }
@@ -143,6 +148,7 @@ fun FilterSlapApp() {
         val request = ++renderRequest
         val photo = photoRequest
         activeRecipe = null
+        activeLearned = null
         activeOutcome = null
         isProcessing = true
         processingJob = coroutineScope.launch(Dispatchers.Default) {
@@ -158,7 +164,42 @@ fun FilterSlapApp() {
                 unpublished = render.bitmap
                 checkCancelled()
                 val plan = render.appliedPlan
-                val outcome = render.outcome!!
+                val legacyOutcome = render.outcome!!
+                var learnedRecipe:LearnedOfflineCandidate.Prepared?=null
+                var learnedPreview:LearnedOfflineCandidate.Preview?=null
+                val imported=LocalLearnedModelStore.load(context)
+                if(imported!=null) {
+                    try {
+                        val proposal=LearnedOfflineCandidate.prepareApprovedBytes(
+                            frame,imported.bytes,imported.sha256,"global",checkCancelled)
+                        if(proposal!=null) {
+                            val ready=LearnedOfflineCandidate.renderPrepared(
+                                frame,proposal,checkCancelled)
+                            if(ready!=null) {
+                                learnedRecipe=proposal
+                                learnedPreview=ready
+                                unpublished=ready.bitmap
+                                render.bitmap.recycle()
+                            }
+                        }
+                    }catch(cancelled:CancellationException){throw cancelled}
+                    catch(error:Exception){
+                        android.util.Log.w("FilterSlap","User model could not improve photo safely; V9 retained",error)
+                    }
+                }
+                val outcome=if(learnedPreview!=null && learnedRecipe!=null)
+                    EnhancementOutcome(
+                        status="Experimental learned edit",
+                        engine="USER_IMPORTED_ONNX_GLOBAL",
+                        recipeId=legacyOutcome.recipeId,
+                        modelFingerprint=learnedRecipe.fingerprint,
+                        modelStrength=learnedRecipe.strength,
+                        maskUsed=false,
+                        damage=learnedPreview.damage,
+                        reasons=listOf("V9 pixel safety gate retained",
+                            "User-imported ONNX model executed offline",
+                            "Export must separately pass native-resolution safety")
+                    ) else legacyOutcome
                 val details = plan.decisions.map { decision ->
                     "${decision.parameter}${if (decision.regionMask != "Global") " (${decision.regionMask})" else ""}"
                 }
@@ -179,15 +220,25 @@ fun FilterSlapApp() {
                             add("Neutral-anchor white balance applied")
                     }.joinToString(", ").ifEmpty { "Source colors retained" }
                 ))
+                val actualReport=if(learnedRecipe!=null)
+                    enriched.copy(report=enriched.report.copy(
+                        toneAdjustments="Whole-frame learned affine adjustment; guarded strength",
+                        colorAdjustments="User-owned ONNX model at ${(learnedRecipe.strength*100).toInt()}% strength"
+                    )) else enriched
                 withContext(Dispatchers.Main) {
                     if (request == renderRequest && photo == photoRequest) {
-                        editedBitmap = render.bitmap
+                        editedBitmap = unpublished
                         unpublished = null
-                        activePlan = plan
+                        activePlan = if(learnedRecipe==null)plan else null
                         activeRecipe = render.recipe
+                        activeLearned = learnedRecipe
                         activeOutcome = outcome
-                        reportAnalysis = enriched
-                        analysisNotes = listOf(outcome.status) + details
+                        reportAnalysis = actualReport
+                        analysisNotes = if(learnedRecipe!=null)
+                            listOf("User-imported ONNX global model at ${(learnedRecipe.strength*100).toInt()}%",
+                                "Native V9 safety criteria passed",
+                                "Export will use this exact model prediction")
+                            else listOf(outcome.status) + details
                         stageProgress = 1f
                         isProcessing = false
                     }
@@ -298,6 +349,7 @@ fun FilterSlapApp() {
         photoRequest++
         renderRequest++
         activeRecipe = null
+        activeLearned = null
         activeOutcome = null
         decodeJob?.cancel()
         processingJob?.cancel()
@@ -424,6 +476,7 @@ fun FilterSlapApp() {
                 editedBitmap = null
                 activePlan = null
                 activeRecipe = null
+                activeLearned = null
                 activeOutcome = null
                 reportAnalysis = null
                 selectedCrop = frame
