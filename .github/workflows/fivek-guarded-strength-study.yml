@@ -94,6 +94,8 @@ jobs:
             > app/src/test/java/com/example/engine/learned/ActualTrainedPhotoParityTest.kt
           git show FETCH_HEAD:app/src/test/java/com/example/engine/learned/ActualTrainedStrengthTest.kt \
             > app/src/test/java/com/example/engine/learned/ActualTrainedStrengthTest.kt
+          git show FETCH_HEAD:app/src/test/java/com/example/engine/learned/OpenPhotoVisualReviewTest.kt \
+            > app/src/test/java/com/example/engine/learned/OpenPhotoVisualReviewTest.kt
           test ! -e app/src/main/assets/learned_global_predictor.onnx
       - name: Execute real FiveK-trained model on actual Android ONNX native runtime
         env:
@@ -121,6 +123,24 @@ jobs:
             --data "$PILOT_DATA" --models "$PILOT_OUTPUT" \
             --native /tmp/learned-strength-output-do-not-publish \
             --v9 /tmp/actual-v9-outputs
+      - name: Prepare six openly licensed reference photographs (no FiveK files)
+        run: |
+          python -m pip install 'scikit-image==0.25.2'
+          python research/learned_photo/prepare_visual_fixtures.py \
+            --out /tmp/approved-open-photo-fixtures
+      - name: Render actual V9 vs trained Android learned corrections on open photos
+        env:
+          OPEN_PHOTO_INPUT: /tmp/approved-open-photo-fixtures
+          OPEN_PHOTO_OUTPUT: /tmp/public-photo-android-outputs
+        run: |
+          ./gradlew :app:testDebugUnitTest --tests '*OpenPhotoVisualReviewTest' \
+            --no-daemon --stacktrace
+      - name: Prepare safe-to-share side-by-side photographic evidence
+        run: |
+          python research/learned_photo/create_open_photo_review.py \
+            --inputs /tmp/public-photo-android-outputs \
+            --out /tmp/open-photo-review-cards-only
+          test "$(find /tmp/open-photo-review-cards-only -name '*_comparison.jpg' | wc -l)" -eq 6
       - name: Audit data isolation and no Android modification
         run: |
           test -f "$PILOT_OUTPUT/public_aggregate_metrics.json"
@@ -132,6 +152,14 @@ jobs:
           print("Research test completed. No photo/weights release.")
           PY
           git diff --exit-code -- app
+      - name: Publish public-domain photo review cards only (NO model or research images)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OPEN-PHOTO-V9-VS-LEARNED-VISUAL-REVIEW-NO-MODEL
+          path: /tmp/open-photo-review-cards-only/
+          retention-days: 7
+          if-no-files-found: error
       - name: Publish ONLY numerical research metrics (never source/expert photos or learned weights)
         if: success()
         uses: actions/upload-artifact@v4
