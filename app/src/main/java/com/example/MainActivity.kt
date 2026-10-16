@@ -275,6 +275,7 @@ fun FilterSlapApp() {
             val request = ++photoRequest
             renderRequest++
             activeRecipe = null
+            activeLearned = null
             activeOutcome = null
             analysisNotes = emptyList()
             originalBitmap = null
