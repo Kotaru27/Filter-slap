@@ -1,0 +1,59 @@
+name: Learned ONNX naturalness safety research QA
+on:
+  push:
+    branches:
+      - research/learned-naturalness-gate
+    paths:
+      - 'research/quality/create_test_only_onnx.py'
+      - 'app/src/main/java/com/example/engine/learned/**'
+      - 'app/src/test/java/com/example/engine/learned/**'
+      - '.github/workflows/learned-naturalness-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-native-learned-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      LEARNED_TEST_FIXTURE_DIR: /tmp/filter-slap-onnx-qa-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate two known-output, untrained ONNX fixture models
+        run: |
+          python -m pip install 'onnx==1.17.0' 'numpy>=1.26,<3'
+          python research/quality/create_test_only_onnx.py --output "$LEARNED_TEST_FIXTURE_DIR"
+      - name: Native ONNX global/spatial and safe attenuation regression tests
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest \
+            --tests '*LearnedOnnxEndToEndTest' \
+            --tests '*LearnedOfflineCandidateTest' \
+            --tests '*LearnedStrengthSafetyTest' \
+            --tests '*LearnedNaturalnessSafetyTest' \
+            --no-daemon --stacktrace
+      - name: Ensure only test infrastructure exists in repository
+        run: |
+          git diff --exit-code -- app/src/main/assets app/src/main/java
+          test ! -e app/src/main/assets/learned_global_predictor.onnx
+          test ! -e app/src/main/assets/learned_spatial_predictor.onnx
+          echo "Test-only fixture models remain in /tmp, never in the app."
+      - name: Publish test reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: learned-naturalness-qa-reports-no-models
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
