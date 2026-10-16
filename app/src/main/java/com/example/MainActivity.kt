@@ -374,6 +374,7 @@ fun FilterSlapApp() {
         val crop = selectedCrop
         val recipe = activeRecipe ?: return
         val analysis = reportAnalysis ?: return
+        val approvedLearnedAtSave=activeLearned
         var saveProfile = activePlan?.profileName ?: "AUTO"
         val saveNotes = analysisNotes.toMutableList()
         isSaving = true
@@ -387,7 +388,7 @@ fun FilterSlapApp() {
                 try {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
-                        val learnedRecipe=activeLearned
+                        val learnedRecipe=approvedLearnedAtSave
                         val legacy=if(learnedRecipe==null)
                             OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
                             else null
