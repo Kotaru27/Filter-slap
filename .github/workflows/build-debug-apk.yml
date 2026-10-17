@@ -26,9 +26,9 @@ jobs:
       - name: Require no ML models or inference frameworks in Android release
         run: |
           set -euo pipefail
-          ! grep -R -Ei '^ *implementation\\("com\\.microsoft\\.onnxruntime' app/build.gradle.kts
-          ! grep -R -E 'import (ai\\.onnxruntime|org\\.tensorflow)' app/src/main/java
-          if [ -d app/src/main/assets ] && find app/src/main/assets -type f | grep -Ei '\\.(onnx|tflite|pt|pth)
+          ! grep -F "com.microsoft.onnxruntime" app/build.gradle.kts
+          ! grep -R -E 'import (ai.onnxruntime|org.tensorflow)' app/src/main/java
+          if [ -d app/src/main/assets ] && find app/src/main/assets -type f | grep -E 'onnx$|tflite$|pth$|pt$'; then
       - name: Prepare Gradle wrapper
         run: chmod +x gradlew
       - name: Prepare public-domain real-photo inputs for review
@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/debug/FilterSlap-V9.6-classical-NO-AI.apk
-          if unzip -Z1 "$APK" | grep -Ei '(\\.onnx$|\\.tflite$|\\.pt$|\\.pth$|libonnxruntime|libtensorflowlite)'; then
+          if unzip -Z1 "$APK" | grep -Ei 'onnx$|tflite$|pth$|pt$|libonnxruntime|libtensorflowlite'; then
             echo "ERROR: AI-related model/inference payload found in NO-AI app"
             exit 1
           fi
@@ -148,7 +148,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/debug/FilterSlap-V9.6-classical-NO-AI.apk
-          if unzip -Z1 "$APK" | grep -Ei '(\\.onnx$|\\.tflite$|\\.pt$|\\.pth$|libonnxruntime|libtensorflowlite)'; then
+          if unzip -Z1 "$APK" | grep -Ei 'onnx$|tflite$|pth$|pt$|libonnxruntime|libtensorflowlite'; then
             echo "ERROR: AI-related model/inference payload found in NO-AI app"
             exit 1
           fi
