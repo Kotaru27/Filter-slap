@@ -520,23 +520,6 @@ fun FilterSlapApp() {
         }
     }
 
-    if (showManualEditor && originalBitmap != null) {
-        ManualEditorSheet(
-            values = manualAdjustments,
-            enabled = !isProcessing && !isSaving,
-            useAutoBase = useAutoBase,
-            onAutoBaseChanged = { useAutoBase = it },
-            canUndo = manualUndo.isNotEmpty(),
-            canRedo = manualRedo.isNotEmpty(),
-            onChange = { manualAdjustments = it },
-            onChangeFinished = ::commitManual,
-            onUndo = ::undoManual,
-            onRedo = ::redoManual,
-            onReset = ::resetManual,
-            onDismiss = { commitManual(); showManualEditor = false }
-        )
-    }
-
     // Hold to compare uses the original image at the same crop.
 
     if (showHistory) {
@@ -599,6 +582,7 @@ fun FilterSlapApp() {
                 outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
                 hasManualEdits = !manualAdjustments.isNeutral,
+                editorOpen = showManualEditor,
                 onOpenEditor = { showManualEditor = true },
                 onHold = { holding -> isHolding = holding },
                 onDiscard = ::discard,
@@ -612,6 +596,34 @@ fun FilterSlapApp() {
                     }
                 }
             )
+            if (showManualEditor) {
+                ManualEditorTray(
+                    values = manualAdjustments,
+                    enabled = !isProcessing && !isSaving,
+                    useAutoBase = useAutoBase,
+                    onAutoBaseChanged = { useAutoBase = it },
+                    selectedCrop = selectedCrop,
+                    onCropChanged = { frame ->
+                        editedBitmap = null
+                        automaticBitmap = null
+                        activePlan = null
+                        activeRecipe = null
+                        activeOutcome = null
+                        reportAnalysis = null
+                        selectedCrop = frame
+                        applyEdits(frame)
+                    },
+                    canUndo = manualUndo.isNotEmpty(),
+                    canRedo = manualRedo.isNotEmpty(),
+                    onChange = { manualAdjustments = it },
+                    onChangeFinished = ::commitManual,
+                    onUndo = ::undoManual,
+                    onRedo = ::redoManual,
+                    onReset = ::resetManual,
+                    onDismiss = { commitManual(); showManualEditor = false },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
         }
     }
 }
@@ -686,6 +698,7 @@ private fun EditorScreen(
     outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
     hasManualEdits: Boolean,
+    editorOpen: Boolean,
     onOpenEditor: () -> Unit,
     onHold: (Boolean) -> Unit,
     onDiscard: () -> Unit,
@@ -713,7 +726,8 @@ private fun EditorScreen(
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = "Edited photo preview",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize()
+                        .padding(bottom = if(editorOpen) 285.dp else 0.dp),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -770,8 +784,8 @@ private fun EditorScreen(
             }
         }
 
-        // Bottom bar: grading profile + save.
-        Column(
+        // Bottom bar: editing controls replace actions while open.
+        if (!editorOpen) Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
