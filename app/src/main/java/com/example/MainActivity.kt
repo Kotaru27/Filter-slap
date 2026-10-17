@@ -68,7 +68,10 @@ import kotlinx.coroutines.ensureActive
 import com.example.engine.v7.EditRecipe
 import com.example.engine.v7.EnhancementOutcome
 import com.example.engine.v7.OfflineEnhancer
+import com.example.engine.manual.ManualAdjustments
+import com.example.engine.manual.ManualPhotoEditor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -109,6 +112,47 @@ fun FilterSlapApp() {
     var originalUri by remember { mutableStateOf<Uri?>(null) }
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var editedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var automaticBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var manualAdjustments by remember { mutableStateOf(ManualAdjustments()) }
+    var committedManual by remember { mutableStateOf(ManualAdjustments()) }
+    var manualUndo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
+    var manualRedo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
+    var showManualEditor by remember { mutableStateOf(false) }
+
+    fun commitManual() {
+        if (manualAdjustments != committedManual) {
+            manualUndo = (manualUndo + committedManual).takeLast(25)
+            committedManual = manualAdjustments
+            manualRedo = emptyList()
+        }
+    }
+    fun resetManual() {
+        commitManual()
+        if (!manualAdjustments.isNeutral) {
+            manualUndo = (manualUndo + manualAdjustments).takeLast(25)
+            manualAdjustments = ManualAdjustments()
+            committedManual = manualAdjustments
+            manualRedo = emptyList()
+        }
+    }
+    fun undoManual() {
+        if (manualUndo.isNotEmpty()) {
+            val previous = manualUndo.last()
+            manualUndo = manualUndo.dropLast(1)
+            manualRedo = manualRedo + manualAdjustments
+            manualAdjustments = previous
+            committedManual = previous
+        }
+    }
+    fun redoManual() {
+        if (manualRedo.isNotEmpty()) {
+            val next = manualRedo.last()
+            manualRedo = manualRedo.dropLast(1)
+            manualUndo = (manualUndo + manualAdjustments).takeLast(25)
+            manualAdjustments = next
+            committedManual = next
+        }
+    }
     var analysisNotes by remember { mutableStateOf<List<String>>(emptyList()) }
 
     var isProcessing by remember { mutableStateOf(false) }
@@ -181,6 +225,7 @@ fun FilterSlapApp() {
                 ))
                 withContext(Dispatchers.Main) {
                     if (request == renderRequest && photo == photoRequest) {
+                        automaticBitmap = render.bitmap
                         editedBitmap = render.bitmap
                         unpublished = null
                         activePlan = plan
@@ -227,7 +272,13 @@ fun FilterSlapApp() {
             activeOutcome = null
             analysisNotes = emptyList()
             originalBitmap = null
+            automaticBitmap = null
             editedBitmap = null
+            manualAdjustments = ManualAdjustments()
+            committedManual = manualAdjustments
+            manualUndo = emptyList()
+            manualRedo = emptyList()
+            showManualEditor = false
             cachedAnalysis = null
             reportAnalysis = null
             activePlan = null
@@ -305,7 +356,13 @@ fun FilterSlapApp() {
         isProcessing = false
         isHolding = false
         originalBitmap = null
+        automaticBitmap = null
         editedBitmap = null
+        manualAdjustments = ManualAdjustments()
+        committedManual = manualAdjustments
+        manualUndo = emptyList()
+        manualRedo = emptyList()
+        showManualEditor = false
         originalUri = null
         cachedAnalysis = null
         reportAnalysis = null
@@ -322,6 +379,7 @@ fun FilterSlapApp() {
         val crop = selectedCrop
         val recipe = activeRecipe ?: return
         val analysis = reportAnalysis ?: return
+        val manualForExport = manualAdjustments
         var saveProfile = activePlan?.profileName ?: "AUTO"
         val saveNotes = analysisNotes.toMutableList()
         isSaving = true
@@ -337,9 +395,14 @@ fun FilterSlapApp() {
                     try {
                         val exportRender = OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
                         val rendered = exportRender.bitmap
-                        saveProfile = exportRender.appliedPlan.profileName
+                        val finalBitmap = if (manualForExport.isNeutral) rendered
+                            else ManualPhotoEditor.render(rendered,manualForExport) {
+                                jobContext.ensureActive()
+                            }
+                        saveProfile = exportRender.appliedPlan.profileName +
+                            if (manualForExport.isNeutral) "" else " + Manual"
                         try {
-                            outputSize = "${rendered.width} × ${rendered.height}"
+                            outputSize = "${finalBitmap.width} × ${finalBitmap.height}"
                             // Export renders the immutable recipe the preview approved.
                             val appliedExportNotes = exportRender.appliedPlan.decisions.map { dec ->
                                 "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
@@ -347,9 +410,11 @@ fun FilterSlapApp() {
                             saveNotes.clear()
                             saveNotes.add(exportRender.outcome!!.summary())
                             saveNotes.addAll(appliedExportNotes)
-                            savedUri = saveBitmapToGallery(context, rendered)
+                            if (!manualForExport.isNeutral) saveNotes.add("Manual adjustments")
+                            savedUri = saveBitmapToGallery(context, finalBitmap)
                                 ?: throw java.io.IOException("Gallery export failed")
                         } finally {
+                            if (finalBitmap !== rendered && !finalBitmap.isRecycled) finalBitmap.recycle()
                             if (rendered !== cropped && !rendered.isRecycled) rendered.recycle()
                         }
                     } finally {
@@ -403,6 +468,44 @@ fun FilterSlapApp() {
         else Toast.makeText(context, "Storage permission required to save", Toast.LENGTH_SHORT).show()
     }
 
+    // Every slider preview starts from the immutable auto/base image.
+    // The same manual recipe follows the base renderer in full-size export.
+    LaunchedEffect(automaticBitmap, manualAdjustments, photoRequest) {
+        val baseline = automaticBitmap ?: return@LaunchedEffect
+        if (manualAdjustments.isNeutral) {
+            editedBitmap = baseline
+            return@LaunchedEffect
+        }
+        delay(85)
+        val settings = manualAdjustments
+        val candidate = withContext(Dispatchers.Default) {
+            val active = coroutineContext
+            ManualPhotoEditor.render(baseline, settings) { active.ensureActive() }
+        }
+        try {
+            coroutineContext.ensureActive()
+            editedBitmap = candidate
+        } catch (cancelled: CancellationException) {
+            candidate.recycle()
+            throw cancelled
+        }
+    }
+
+    if (showManualEditor && originalBitmap != null) {
+        ManualEditorSheet(
+            values = manualAdjustments,
+            enabled = automaticBitmap != null && !isProcessing && !isSaving,
+            canUndo = manualUndo.isNotEmpty(),
+            canRedo = manualRedo.isNotEmpty(),
+            onChange = { manualAdjustments = it },
+            onChangeFinished = ::commitManual,
+            onUndo = ::undoManual,
+            onRedo = ::redoManual,
+            onReset = ::resetManual,
+            onDismiss = { commitManual(); showManualEditor = false }
+        )
+    }
+
     // Comparison must use the same framing as the edited image.
     val comparisonBitmap = remember(originalBitmap, selectedCrop) {
         originalBitmap?.let { cropBitmap(it, selectedCrop.aspectRatio) }
@@ -422,6 +525,7 @@ fun FilterSlapApp() {
             onCropChanged = { frame ->
                 showAnalysis = false
                 editedBitmap = null
+                automaticBitmap = null
                 activePlan = null
                 activeRecipe = null
                 activeOutcome = null
@@ -466,6 +570,8 @@ fun FilterSlapApp() {
                 activePlan = activePlan,
                 outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
+                hasManualEdits = !manualAdjustments.isNeutral,
+                onOpenEditor = { showManualEditor = true },
                 onHold = { holding -> isHolding = holding },
                 onDiscard = ::discard,
                 onShowAnalysis = { showAnalysis = true },
