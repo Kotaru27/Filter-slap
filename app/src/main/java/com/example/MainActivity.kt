@@ -657,6 +657,8 @@ private fun EditorScreen(
     activePlan: EditPlan?,
     outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
+    hasManualEdits: Boolean,
+    onOpenEditor: () -> Unit,
     onHold: (Boolean) -> Unit,
     onDiscard: () -> Unit,
     onShowAnalysis: () -> Unit,
@@ -700,7 +702,7 @@ private fun EditorScreen(
             )
         } else if (editedBitmap != null && !isProcessing) {
             PillLabel(
-                text = outcome?.status?.uppercase() ?: "ORIGINAL KEPT",
+                text = if (hasManualEdits) "MANUAL EDIT" else (outcome?.status?.uppercase() ?: "ORIGINAL KEPT"),
                 tint = Accent,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp)
             )
@@ -751,7 +753,7 @@ private fun EditorScreen(
         ) {
             activePlan?.let { plan ->
                 Text(
-                    outcome?.status ?: "Auto enhance",
+                    if (hasManualEdits) "Your edit" else (outcome?.status ?: "Auto correction"),
                     color = Accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -765,26 +767,37 @@ private fun EditorScreen(
                 )
                 Spacer(Modifier.height(12.dp))
             }
-            Button(
-                onClick = onSave,
-                enabled = !isSaving && !isProcessing && editedBitmap != null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = Color(0xFF1A1205),
-                    disabledContainerColor = Accent.copy(alpha = 0.3f),
-                    disabledContentColor = Color(0xFF1A1205).copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.height(52.dp).fillMaxWidth(0.5f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color(0xFF1A1205),
+                OutlinedButton(
+                    onClick = onOpenEditor,
+                    enabled = !isSaving && !isProcessing && editedBitmap != null,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Accent),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor=Accent),
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.height(52.dp).weight(1f)
+                ) {
+                    Text(if (hasManualEdits) "Adjust · Edited" else "Edit Photo",
+                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = onSave,
+                    enabled = !isSaving && !isProcessing && editedBitmap != null,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Accent, contentColor = Color(0xFF1A1205),
+                        disabledContainerColor = Accent.copy(alpha = 0.3f),
+                        disabledContentColor = Color(0xFF1A1205).copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.height(52.dp).weight(1f)
+                ) {
+                    if (isSaving) CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp), color = Color(0xFF1A1205),
                         strokeWidth = 2.dp
                     )
-                } else {
-                    Text("Save Copy", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    else Text("Save Photo", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
