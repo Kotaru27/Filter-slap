@@ -804,6 +804,118 @@ private fun EditorScreen(
     }
 }
 
+/**
+ * Real photo editor controls. The photo stays visible until this compact
+ * panel is opened; all changes are reversible and rendered offline.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManualEditorSheet(
+    values: ManualAdjustments,
+    enabled: Boolean,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onChange: (ManualAdjustments) -> Unit,
+    onChangeFinished: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF12161A),
+        scrimColor = Color.Black.copy(alpha=.60f)
+    ) {
+        Column(
+            modifier=Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal=22.dp).padding(bottom=36.dp)
+        ) {
+            Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()) {
+                Column(modifier=Modifier.weight(1f)) {
+                    Text("Edit photo",fontSize=22.sp,fontWeight=FontWeight.Bold,color=TextPrimary)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Manual · offline · non-destructive",fontSize=12.sp,color=TextSecondary)
+                }
+                TextButton(onClick=onUndo,enabled=enabled && canUndo) {
+                    Text("Undo",color=if(canUndo)Accent else TextSecondary)
+                }
+                TextButton(onClick=onRedo,enabled=enabled && canRedo) {
+                    Text("Redo",color=if(canRedo)Accent else TextSecondary)
+                }
+                TextButton(onClick=onReset,enabled=enabled && !values.isNeutral) {
+                    Text("Reset",color=if(values.isNeutral)TextSecondary else Accent)
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Text("LIGHT",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
+            Spacer(Modifier.height(8.dp))
+            ManualControl("Exposure",values.exposure,-2f..2f,enabled,"EV",
+                onValueChange={onChange(values.copy(exposure=it))},onFinished=onChangeFinished)
+            ManualControl("Contrast",values.contrast,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(contrast=it))},onFinished=onChangeFinished)
+            ManualControl("Highlights",values.highlights,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(highlights=it))},onFinished=onChangeFinished)
+            ManualControl("Shadows",values.shadows,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(shadows=it))},onFinished=onChangeFinished)
+            ManualControl("Whites",values.whites,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(whites=it))},onFinished=onChangeFinished)
+            ManualControl("Blacks",values.blacks,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(blacks=it))},onFinished=onChangeFinished)
+            Spacer(Modifier.height(16.dp))
+            Text("COLOR",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
+            Spacer(Modifier.height(8.dp))
+            ManualControl("Temperature",values.temperature,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(temperature=it))},onFinished=onChangeFinished)
+            ManualControl("Tint",values.tint,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(tint=it))},onFinished=onChangeFinished)
+            ManualControl("Vibrance",values.vibrance,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(vibrance=it))},onFinished=onChangeFinished)
+            ManualControl("Saturation",values.saturation,-100f..100f,enabled,
+                onValueChange={onChange(values.copy(saturation=it))},onFinished=onChangeFinished)
+            Spacer(Modifier.height(16.dp))
+            Text("FINISH",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
+            Spacer(Modifier.height(8.dp))
+            ManualControl("Vignette",values.vignette,0f..100f,enabled,
+                onValueChange={onChange(values.copy(vignette=it))},onFinished=onChangeFinished)
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick=onDismiss,
+                enabled=enabled,
+                shape=RoundedCornerShape(24.dp),
+                colors=ButtonDefaults.buttonColors(containerColor=Accent,contentColor=Color(0xFF1A1205)),
+                modifier=Modifier.fillMaxWidth().height(50.dp)
+            ) { Text("Done editing",fontWeight=FontWeight.SemiBold) }
+        }
+    }
+}
+
+@Composable
+private fun ManualControl(
+    title: String, value:Float, range: ClosedFloatingPointRange<Float>,
+    enabled:Boolean, suffix:String="", onValueChange:(Float)->Unit, onFinished:()->Unit
+) {
+    Row(modifier=Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+        Text(title,fontSize=13.sp,color=TextPrimary,modifier=Modifier.weight(1f))
+        val valueLabel = if(suffix=="EV") "%+.2f EV".format(value)
+            else "%+.0f".format(value)
+        Text(valueLabel,fontSize=13.sp,color=if(value==0f)TextSecondary else Accent)
+    }
+    Slider(
+        value=value,
+        onValueChange=onValueChange,
+        onValueChangeFinished=onFinished,
+        valueRange=range,
+        enabled=enabled,
+        modifier=Modifier.fillMaxWidth().height(37.dp),
+        colors=SliderDefaults.colors(
+            thumbColor=Accent,
+            activeTrackColor=Accent,
+            inactiveTrackColor=Color(0xFF414B54)
+        )
+    )
+}
+
 @Composable
 private fun PillLabel(text: String, tint: Color = TextPrimary, modifier: Modifier = Modifier) {
     Text(
