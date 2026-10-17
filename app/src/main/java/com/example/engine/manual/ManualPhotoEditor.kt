@@ -24,6 +24,21 @@ data class ManualAdjustments(
 ) {
     val isNeutral: Boolean get() = this == ManualAdjustments()
 
+    /** Display only user-authored changes; never claim a defect was removed. */
+    fun editNotes(): List<String> = buildList {
+        if(exposure!=0f)add("Exposure %+.2f EV".format(exposure))
+        if(contrast!=0f)add("Contrast %+.0f".format(contrast))
+        if(highlights!=0f)add("Highlights %+.0f".format(highlights))
+        if(shadows!=0f)add("Shadows %+.0f".format(shadows))
+        if(whites!=0f)add("Whites %+.0f".format(whites))
+        if(blacks!=0f)add("Blacks %+.0f".format(blacks))
+        if(temperature!=0f)add("Warmth %+.0f".format(temperature))
+        if(tint!=0f)add("Tint %+.0f".format(tint))
+        if(vibrance!=0f)add("Vibrance %+.0f".format(vibrance))
+        if(saturation!=0f)add("Saturation %+.0f".format(saturation))
+        if(vignette!=0f)add("Vignette +%.0f".format(vignette))
+    }
+
     fun validated(): ManualAdjustments {
         require(exposure.isFinite() && exposure in -2f..2f)
         for (v in listOf(contrast, highlights, shadows, whites, blacks,
