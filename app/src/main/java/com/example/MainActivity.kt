@@ -485,10 +485,17 @@ fun FilterSlapApp() {
     }
     // Preview and full-resolution export use original image unless Auto is opt-in.
     val previewBase = if(useAutoBase) automaticBitmap else comparisonBitmap
-    LaunchedEffect(previewBase, manualAdjustments, photoRequest) {
+    LaunchedEffect(previewBase, automaticBitmap, manualAdjustments, photoRequest) {
         val baseline = previewBase ?: return@LaunchedEffect
         if (manualAdjustments.isNeutral) {
+            val old=editedBitmap
             editedBitmap = baseline
+            if(old != null && old !== baseline && old !== automaticBitmap &&
+                old !== comparisonBitmap && old !== originalBitmap) {
+                withFrameNanos { }
+                withFrameNanos { }
+                if(old !== editedBitmap && !old.isRecycled)old.recycle()
+            }
             return@LaunchedEffect
         }
         delay(85)
@@ -499,7 +506,14 @@ fun FilterSlapApp() {
         }
         try {
             coroutineContext.ensureActive()
+            val old=editedBitmap
             editedBitmap = candidate
+            if(old != null && old !== candidate && old !== automaticBitmap &&
+                old !== comparisonBitmap && old !== originalBitmap) {
+                withFrameNanos { }
+                withFrameNanos { }
+                if(old !== editedBitmap && !old.isRecycled)old.recycle()
+            }
         } catch (cancelled: CancellationException) {
             candidate.recycle()
             throw cancelled
@@ -827,6 +841,8 @@ private fun EditorScreen(
 private fun ManualEditorSheet(
     values: ManualAdjustments,
     enabled: Boolean,
+    useAutoBase: Boolean,
+    onAutoBaseChanged: (Boolean) -> Unit,
     canUndo: Boolean,
     canRedo: Boolean,
     onChange: (ManualAdjustments) -> Unit,
@@ -862,6 +878,25 @@ private fun ManualEditorSheet(
                 }
             }
             Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                FilterChip(
+                    selected=!useAutoBase,
+                    onClick={onAutoBaseChanged(false)},
+                    enabled=enabled,
+                    label={Text("Original",fontSize=13.sp)},
+                    colors=FilterChipDefaults.filterChipColors(
+                        selectedContainerColor=Accent, selectedLabelColor=Color(0xFF1A1205))
+                )
+                FilterChip(
+                    selected=useAutoBase,
+                    onClick={onAutoBaseChanged(true)},
+                    enabled=enabled,
+                    label={Text("Auto starting point",fontSize=13.sp)},
+                    colors=FilterChipDefaults.filterChipColors(
+                        selectedContainerColor=Accent, selectedLabelColor=Color(0xFF1A1205))
+                )
+            }
+            Spacer(Modifier.height(12.dp))
             Text("LIGHT",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
             Spacer(Modifier.height(8.dp))
             ManualControl("Exposure",values.exposure,-2f..2f,enabled,"EV",
