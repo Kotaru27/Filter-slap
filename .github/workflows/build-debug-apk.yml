@@ -38,17 +38,21 @@ jobs:
           python research/quality/prepare_public_photos.py --output-dir app/build/public-photo-input
       - name: Verify blinded-review tooling (research; no licensed photos)
         run: python -m unittest discover -s research/quality/tests -p 'test_learned_blind_review.py' -v
+      - name: Generate synthetic test-only ONNX models (never bundle them)
+        run: |
+          python research/quality/create_test_only_onnx.py --output app/build/onnx-fixtures
       - name: Run full Android unit tests (required; failures block APK)
         env:
           PHOTO_COMPARE_INPUT: ${{ github.workspace }}/app/build/public-photo-input
           PHOTO_COMPARE_OUTPUT: ${{ github.workspace }}/app/build/public-photo-pairs
+          LEARNED_TEST_FIXTURE_DIR: ${{ github.workspace }}/app/build/onnx-fixtures
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
       - name: Emit small public-photo before-after sheet for visual review
         run: |
           python research/quality/make_contact_sheet.py \
             --directory app/build/public-photo-pairs \
             --output app/build/public-photo-pairs/contact-sheet.jpg \
-            --label "V9.5 bridge; V9.3 renderer unchanged"
+            --label "V10 optional offline lab, default V9.3 renderer unchanged"
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
@@ -63,9 +67,9 @@ jobs:
           set -euo pipefail
           APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           BADGING="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "versionCode='14'"
-          echo "$BADGING" | grep -F "versionName='1.5.5-v9.5-ai-runtime-no-model'"
-          cp "$APK" app/build/outputs/apk/debug/FilterSlap-V9.5-ai-bridge-NO-MODEL.apk
+          echo "$BADGING" | grep -F "versionCode='15'"
+          echo "$BADGING" | grep -F "versionName='1.5.6-v10-user-onnx-lab-experimental'"
+          cp "$APK" app/build/outputs/apk/debug/FilterSlap-V10-User-ONNX-Lab-NO-WEIGHTS.apk
       - name: Upload test reports for review
         if: always()
         uses: actions/upload-artifact@v4
@@ -77,20 +81,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: V9-5-BRIDGE-ONLY-V9-3-ENGINE-CC0-photo-comparisons
+          name: V10-LAB-DEFAULT-V9-3-CC0-photo-comparisons
           path: app/build/public-photo-pairs/
           if-no-files-found: warn
       - name: Confirm no unlicensed learned AI predictor was bundled
         run: |
           set -euo pipefail
-          if unzip -Z1 app/build/outputs/apk/debug/FilterSlap-V9.5-ai-bridge-NO-MODEL.apk | grep -Eq '^assets/learned_(global|spatial)_predictor\.onnx$'; then
+          if unzip -Z1 app/build/outputs/apk/debug/FilterSlap-V10-User-ONNX-Lab-NO-WEIGHTS.apk | grep -Eq '^assets/learned_(global|spatial)_predictor\.onnx$'; then
             echo "ERROR: Unapproved learned model asset present."
             exit 1
           fi
-          echo "No learned-model weights bundled; V9.3 remains the active renderer."
+          echo "V10 lab present. No learned-model weights bundled; V9.3 remains the default editor."
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V9.5-AI-runtime-bridge-NO-WEIGHTS-NOT-QUALITY-UPGRADE
-          path: app/build/outputs/apk/debug/FilterSlap-V9.5-ai-bridge-NO-MODEL.apk
+          name: FilterSlap-V10-User-ONNX-Lab-EXPERIMENTAL-NO-WEIGHTS
+          path: app/build/outputs/apk/debug/FilterSlap-V10-User-ONNX-Lab-NO-WEIGHTS.apk
           if-no-files-found: error

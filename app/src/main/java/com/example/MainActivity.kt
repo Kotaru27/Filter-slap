@@ -3,6 +3,7 @@ package com.example
 import android.Manifest
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -527,6 +528,15 @@ private fun WelcomeScreen(onOpenPhoto: () -> Unit, onShowHistory: () -> Unit, ha
             ) {
                 Text("Choose a Photo", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
+            if (BuildConfig.DEBUG) {
+                val context=LocalContext.current
+                Spacer(Modifier.height(10.dp))
+                TextButton(onClick={
+                    context.startActivity(Intent(context,LearnedLabActivity::class.java))
+                }){
+                    Text("Experimental offline AI lab",fontSize=12.sp,color=TextSecondary)
+                }
+            }
             if (hasHistory) {
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = onShowHistory) {
@@ -927,7 +937,7 @@ private const val FULL_RES_MAX_DIM = 4096
 private fun maxSafePixels(): Long =
     (Runtime.getRuntime().maxMemory() / 72L).coerceIn(1_000_000L, 12_000_000L)
 
-private fun loadFullResBitmapFromUri(context: Context, uri: Uri): Bitmap? {
+internal fun loadFullResBitmapFromUri(context: Context, uri: Uri): Bitmap? {
     return try {
         // Pass 1: bounds only, to compute the sample size.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -989,7 +999,7 @@ private fun loadFullResBitmapFromUri(context: Context, uri: Uri): Bitmap? {
     }
 }
 
-private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
+internal fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
     return try {
         val options = BitmapFactory.Options()
         options.inJustDecodeBounds = true

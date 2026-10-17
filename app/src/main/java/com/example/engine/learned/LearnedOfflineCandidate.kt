@@ -194,6 +194,20 @@ internal object LearnedOfflineCandidate {
         checkCancelled:()->Unit={}
     ):Preview?=renderAtStrength(source,grid,strength,"strength-study",checkCancelled)
 
+    /**
+     * Use the same explicitly selected preview strength for full-size gallery
+     * export. Failed safety review returns null; the caller MUST NOT silently
+     * save the V9 baseline as if it were the approved learned preview.
+     */
+    internal fun previewApprovedFixedStrengthBytes(
+        source:Bitmap,modelBytes:ByteArray,approvedSha256:String,
+        strength:Float,mode:String="global",checkCancelled:()->Unit={}
+    ):Preview? {
+        require(strength.isFinite() && strength>0f && strength<=1f)
+        val (grid,hash)=predictBytes(source,modelBytes,approvedSha256,mode,checkCancelled)
+        return renderAtStrength(source,grid,strength,hash,checkCancelled)
+    }
+
     /** Existing public candidate path, exact legacy strength one. */
     fun renderCandidate(source:Bitmap,grid:LearnedCoefficientGrid,
                         hash:String="research-probe",checkCancelled:()->Unit={},
