@@ -118,6 +118,7 @@ fun FilterSlapApp() {
     var manualUndo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
     var manualRedo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
     var showManualEditor by remember { mutableStateOf(false) }
+    var useAutoBase by remember { mutableStateOf(false) }
 
     fun commitManual() {
         if (manualAdjustments != committedManual) {
@@ -279,6 +280,7 @@ fun FilterSlapApp() {
             manualUndo = emptyList()
             manualRedo = emptyList()
             showManualEditor = false
+            useAutoBase = false
             cachedAnalysis = null
             reportAnalysis = null
             activePlan = null
@@ -363,6 +365,7 @@ fun FilterSlapApp() {
         manualUndo = emptyList()
         manualRedo = emptyList()
         showManualEditor = false
+        useAutoBase = false
         originalUri = null
         cachedAnalysis = null
         reportAnalysis = null
@@ -380,7 +383,9 @@ fun FilterSlapApp() {
         val recipe = activeRecipe ?: return
         val analysis = reportAnalysis ?: return
         val manualForExport = manualAdjustments
-        var saveProfile = activePlan?.profileName ?: "AUTO"
+        val autoForExport = useAutoBase
+        var saveProfile = if(autoForExport) (activePlan?.profileName ?: "AUTO")
+            else "MANUAL_CLASSICAL_NO_AI"
         val saveNotes = analysisNotes.toMutableList()
         isSaving = true
         coroutineScope.launch(Dispatchers.IO) {
@@ -393,29 +398,36 @@ fun FilterSlapApp() {
                 try {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
-                        val exportRender = OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
-                        val rendered = exportRender.bitmap
-                        val finalBitmap = if (manualForExport.isNeutral) rendered
-                            else ManualPhotoEditor.render(rendered,manualForExport) {
-                                jobContext.ensureActive()
-                            }
-                        saveProfile = exportRender.appliedPlan.profileName +
-                            if (manualForExport.isNeutral) "" else " + Manual"
+                        val exportRender = if (autoForExport)
+                            OfflineEnhancer.render(cropped, recipe, analysis) { jobContext.ensureActive() }
+                            else null
+                        val rendered = exportRender?.bitmap ?: cropped
+                        var finalBitmap:Bitmap? = null
                         try {
+                            finalBitmap = if(manualForExport.isNeutral) rendered
+                                else ManualPhotoEditor.render(rendered,manualForExport) {
+                                    jobContext.ensureActive()
+                                }
                             outputSize = "${finalBitmap.width} × ${finalBitmap.height}"
-                            // Export renders the immutable recipe the preview approved.
-                            val appliedExportNotes = exportRender.appliedPlan.decisions.map { dec ->
-                                "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
-                            }
                             saveNotes.clear()
-                            saveNotes.add(exportRender.outcome!!.summary())
-                            saveNotes.addAll(appliedExportNotes)
-                            if (!manualForExport.isNeutral) saveNotes.add("Manual adjustments")
-                            savedUri = saveBitmapToGallery(context, finalBitmap)
+                            if(exportRender!=null) {
+                                saveProfile = exportRender.appliedPlan.profileName +
+                                    if(manualForExport.isNeutral) "" else " + Manual"
+                                saveNotes.add(exportRender.outcome!!.summary())
+                                saveNotes.addAll(exportRender.appliedPlan.decisions.map { dec ->
+                                    "${dec.parameter}${if(dec.regionMask!="Global") " (${dec.regionMask})" else ""}"
+                                })
+                            } else {
+                                saveProfile="MANUAL_CLASSICAL_NO_AI"
+                                saveNotes.add("Original-based classical manual editing")
+                            }
+                            if(!manualForExport.isNeutral)saveNotes.add("Manual adjustments")
+                            savedUri=saveBitmapToGallery(context, finalBitmap)
                                 ?: throw java.io.IOException("Gallery export failed")
                         } finally {
-                            if (finalBitmap !== rendered && !finalBitmap.isRecycled) finalBitmap.recycle()
-                            if (rendered !== cropped && !rendered.isRecycled) rendered.recycle()
+                            if(finalBitmap!=null && finalBitmap!==rendered &&
+                                !finalBitmap.isRecycled)finalBitmap.recycle()
+                            if(rendered!==cropped && !rendered.isRecycled)rendered.recycle()
                         }
                     } finally {
                         if (cropped !== source && !cropped.isRecycled) cropped.recycle()
@@ -468,10 +480,13 @@ fun FilterSlapApp() {
         else Toast.makeText(context, "Storage permission required to save", Toast.LENGTH_SHORT).show()
     }
 
-    // Every slider preview starts from the immutable auto/base image.
-    // The same manual recipe follows the base renderer in full-size export.
-    LaunchedEffect(automaticBitmap, manualAdjustments, photoRequest) {
-        val baseline = automaticBitmap ?: return@LaunchedEffect
+    val comparisonBitmap = remember(originalBitmap, selectedCrop) {
+        originalBitmap?.let { cropBitmap(it, selectedCrop.aspectRatio) }
+    }
+    // Preview and full-resolution export use original image unless Auto is opt-in.
+    val previewBase = if(useAutoBase) automaticBitmap else comparisonBitmap
+    LaunchedEffect(previewBase, manualAdjustments, photoRequest) {
+        val baseline = previewBase ?: return@LaunchedEffect
         if (manualAdjustments.isNeutral) {
             editedBitmap = baseline
             return@LaunchedEffect
@@ -494,7 +509,9 @@ fun FilterSlapApp() {
     if (showManualEditor && originalBitmap != null) {
         ManualEditorSheet(
             values = manualAdjustments,
-            enabled = automaticBitmap != null && !isProcessing && !isSaving,
+            enabled = !isProcessing && !isSaving,
+            useAutoBase = useAutoBase,
+            onAutoBaseChanged = { useAutoBase = it },
             canUndo = manualUndo.isNotEmpty(),
             canRedo = manualRedo.isNotEmpty(),
             onChange = { manualAdjustments = it },
@@ -506,10 +523,7 @@ fun FilterSlapApp() {
         )
     }
 
-    // Comparison must use the same framing as the edited image.
-    val comparisonBitmap = remember(originalBitmap, selectedCrop) {
-        originalBitmap?.let { cropBitmap(it, selectedCrop.aspectRatio) }
-    }
+    // Hold to compare uses the original image at the same crop.
 
     if (showHistory) {
         HistorySheet(onDismiss = { showHistory = false }, historyItems = historyItems)
