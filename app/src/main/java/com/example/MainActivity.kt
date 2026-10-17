@@ -529,9 +529,10 @@ fun FilterSlapApp() {
         AnalysisSheet(
             onDismiss = { showAnalysis = false },
             analysis = reportAnalysis!!,
-            notes = analysisNotes,
-            plan = activePlan,
-            outcome = activeOutcome,
+            notes = (if(useAutoBase) analysisNotes else listOf("Original photo used as editing base")) +
+                manualAdjustments.editNotes(),
+            plan = if(useAutoBase) activePlan else null,
+            outcome = if(useAutoBase) activeOutcome else null,
             selectedCrop = selectedCrop,
             onCropChanged = { frame ->
                 showAnalysis = false
@@ -582,6 +583,7 @@ fun FilterSlapApp() {
                 outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
                 hasManualEdits = !manualAdjustments.isNeutral,
+                usingAutoBase = useAutoBase,
                 editorOpen = showManualEditor,
                 onOpenEditor = { showManualEditor = true },
                 onHold = { holding -> isHolding = holding },
@@ -698,6 +700,7 @@ private fun EditorScreen(
     outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
     hasManualEdits: Boolean,
+    usingAutoBase: Boolean,
     editorOpen: Boolean,
     onOpenEditor: () -> Unit,
     onHold: (Boolean) -> Unit,
@@ -744,7 +747,9 @@ private fun EditorScreen(
             )
         } else if (editedBitmap != null && !isProcessing) {
             PillLabel(
-                text = if (hasManualEdits) "MANUAL EDIT" else (outcome?.status?.uppercase() ?: "ORIGINAL KEPT"),
+                text = if (hasManualEdits) "MANUAL EDIT" else
+                    if(usingAutoBase) (outcome?.status?.uppercase() ?: "AUTO CORRECTION")
+                    else "ORIGINAL · READY TO EDIT",
                 tint = Accent,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp)
             )
@@ -795,7 +800,9 @@ private fun EditorScreen(
         ) {
             activePlan?.let { plan ->
                 Text(
-                    if (hasManualEdits) "Your edit" else (outcome?.status ?: "Auto correction"),
+                    if(hasManualEdits) "Your edit" else
+                        if(usingAutoBase) (outcome?.status ?: "Auto correction")
+                        else "Original · no automatic changes",
                     color = Accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
