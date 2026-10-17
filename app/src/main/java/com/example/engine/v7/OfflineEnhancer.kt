@@ -7,7 +7,6 @@ import com.example.engine.EditDecision
 import com.example.engine.EditPlan
 import com.example.engine.ProcessingStats
 import com.example.engine.RenderResult
-import com.example.engine.v6.V6AdaptiveEditor
 import com.example.engine.v8.CandidatePlanner
 import com.example.engine.v8.CandidateSettings
 import com.example.engine.v8.CorrectionEvidence
@@ -47,23 +46,13 @@ object OfflineEnhancer {
         val height=max(1,(input.height*scale+.5f).toInt())
         val canonical=Bitmap.createScaledBitmap(input,width,height,true)
         try {
-            val notes=mutableListOf<String>()
-            val lut=try {
-                checkCancelled()
-                V6AdaptiveEditor.fusedLut(context,canonical).also {
-                    require(it.all { value -> value.isFinite() && value in -1f..2f }) { "Invalid learned transform" }
-                }
-            } catch(cancelled: CancellationException) { throw cancelled }
-            catch(error: Exception) { notes += modelIssue("Color",error);null }
-            catch(error: LinkageError) { notes += modelIssue("Color",error);null }
+            // NO AI: all proposals come from mathematical measurements of
+            // this photograph. No pretrained LUT, segmentation network,
+            // inference runtime, downloads or external photo content.
+            val notes=mutableListOf("Classical offline processing: whole-frame statistics, guided light recovery")
+            val lut:FloatArray?=null
+            val mask:MaskField?=null
             checkCancelled()
-            val mask=try {
-                OfflineForeground.predict(context,canonical,checkCancelled).also {
-                    if(it==null) notes += "Foreground proposal uncertain; using global tone only"
-                }
-            } catch(cancelled: CancellationException) { throw cancelled }
-            catch(error: Exception) { notes += modelIssue("Foreground",error);null }
-            catch(error: LinkageError) { notes += modelIssue("Foreground",error);null }
             val pixels=IntArray(width*height)
             canonical.getPixels(pixels,0,width,0,0,width,height)
             val histogram=IntArray(256);var subjects=0
@@ -86,9 +75,7 @@ object OfflineEnhancer {
             val detail=.16f*(1f-nativeNoise/3.5f).coerceIn(0f,1f)
             val denoise=((nativeNoise-.8f)/6f).coerceIn(0f,.35f)
             notes += "Native noise estimate %.2f levels; detail and denoise bounded".format(nativeNoise)
-            val fingerprint=try { context.assets.open("v6_model_sha256.txt").bufferedReader().use { it.readText().trim() }
-                .replace('\n',';') + ";foreground="+OfflineForeground.SHA256 }
-                catch(error: Exception) { "unavailable;foreground="+OfflineForeground.SHA256 }
+            val fingerprint="classical-srgb-guided-tone-v1-no-ai"
             val digest=MessageDigest.getInstance("SHA-256")
             for(p in pixels) {
                 digest.update((p ushr 24).toByte());digest.update((p ushr 16).toByte())
@@ -112,7 +99,7 @@ object OfflineEnhancer {
                 val evidence=CorrectionEvidence(before,intentionalDark,na.coverage,
                     na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB),
                     localEvidence.recoverableFraction)
-                val proposals=CandidatePlanner.propose(evidence,lut!=null)
+                val proposals=CandidatePlanner.propose(evidence,false)
                 val assessments=mutableListOf<CandidateAssessment>()
                 val candidates=mutableListOf<EditRecipe>()
                 for(strategy in proposals) {
@@ -307,39 +294,25 @@ object OfflineEnhancer {
             decision("Shadows","Global",recipe.globalLift)
             decision("SubjectDetail",if(recipe.mask!=null) "Subject" else "Detail",recipe.detailStrength)
             decision("NoiseReduction","Smooth regions",recipe.noiseStrength)
-            val modelUnavailable=recipe.diagnostics.any { it.startsWith("Color model:") || it.startsWith("Foreground model:") }
             val status=when {
                 recipe.isIdentity || report.meanChange < .25f -> "Original kept"
-                modelUnavailable -> "Limited adjustment"
                 else -> "Enhanced"
             }
             if(status == "Original kept") decisions.clear()
             val scope=when {
                 recipe.isIdentity -> "Unedited original preserved"
-                recipe.modelStrength>0f -> "Learned color/tone applied to the entire frame; region mask does not attenuate global grade"
-                else -> "No learned global grade selected; independent measured corrections applied"
+                else -> "Classical full-frame and edge-aware tonal corrections; no AI model used"
             }
-            val outcome=EnhancementOutcome(status,"V9_3_COHERENT_TONE",recipe.id,recipe.modelFingerprint,
+            val outcome=EnhancementOutcome(status,"V9_6_CLASSICAL_NO_AI",recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V9_3_COHERENT_TONE",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,"V9_6_CLASSICAL_NO_AI",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error
         }
-    }
-
-    private fun modelIssue(name: String, error: Throwable): String {
-        val problem=when {
-            error is java.io.FileNotFoundException -> "bundled asset missing"
-            error is LinkageError -> "native runtime incompatible"
-            error.message?.contains("integrity",ignoreCase=true)==true -> "asset integrity failure"
-            error is IllegalArgumentException -> "invalid prediction or model contract"
-            else -> "inference failed (${error.javaClass.simpleName})"
-        }
-        return "$name model: $problem"
     }
 
     /** Robust diagonal high-pass residual on low-gradient native-resolution samples.
