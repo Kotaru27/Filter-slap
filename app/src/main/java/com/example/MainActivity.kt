@@ -533,6 +533,7 @@ fun FilterSlapApp() {
                 manualAdjustments.editNotes(),
             plan = if(useAutoBase) activePlan else null,
             outcome = if(useAutoBase) activeOutcome else null,
+            isAutoBase = useAutoBase,
             selectedCrop = selectedCrop,
             onCropChanged = { frame ->
                 showAnalysis = false
@@ -1046,6 +1047,7 @@ private fun AnalysisSheet(
     notes: List<String>,
     plan: EditPlan?,
     outcome: EnhancementOutcome?,
+    isAutoBase: Boolean,
     selectedCrop: CropFrame,
     onCropChanged: (CropFrame) -> Unit
 ) {
@@ -1083,11 +1085,13 @@ private fun AnalysisSheet(
                 ReportRow("Lighting", analysis.report.lighting)
                 ReportRow("Dynamic range", analysis.report.dynamicRange)
                 ReportRow("Exposure bias", analysis.report.histogramBias)
-                ReportRow("Tone action", analysis.report.toneAdjustments.ifEmpty { "—" }, valueTint = InfoBlue)
+                ReportRow("Tone action", if(isAutoBase)analysis.report.toneAdjustments.ifEmpty { "—" }
+                    else "Manual only; no automatic corrections",valueTint=InfoBlue)
             }
             ReportSection("COLOR") {
                 ReportRow("Temperature", analysis.report.colorTemperature)
-                ReportRow("Color action", analysis.report.colorAdjustments.ifEmpty { "—" }, valueTint = InfoBlue)
+                ReportRow("Color action", if(isAutoBase)analysis.report.colorAdjustments.ifEmpty { "—" }
+                    else "Manual only; source colors retained until edited",valueTint=InfoBlue)
             }
             ReportSection("LENS") {
                 ReportRow("Vignette", when {
@@ -1115,6 +1119,11 @@ private fun AnalysisSheet(
             }
             ReportSection("DIAGNOSTICS") {
                 ReportRow("Build", BuildConfig.VERSION_NAME + " · " + BuildConfig.SOURCE_REVISION)
+                if(!isAutoBase) {
+                    ReportRow("Engine","MANUAL_CLASSICAL_NO_AI")
+                    ReportRow("Scope","User controlled, full resolution at export")
+                    ReportRow("Base","Unmodified original at chosen crop")
+                }
                 outcome?.let { result ->
                     ReportRow("Engine", result.engine)
                     ReportRow("Result", result.status)
