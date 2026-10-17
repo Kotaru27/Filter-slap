@@ -37,7 +37,7 @@ class UserModelStoreTest {
             assertNotNull(persisted)
             assertEquals(import.sha256,persisted!!.sha256)
             assertArrayEquals(import.bytes,persisted.bytes)
-            val privateFile=File(app.filesDir,"user-approved-global-predictor.onnx")
+            val privateFile=File(app.noBackupFilesDir,"user-approved-global-predictor.onnx")
             assertTrue(privateFile.isFile)
             privateFile.appendBytes(byteArrayOf(1))
             assertNull("Persisted model bytes must remain pinned",UserModelStore.loadIfVerified(app))
