@@ -805,7 +805,8 @@ private fun AnalysisSheet(
                     ReportRow("Engine", result.engine)
                     ReportRow("Result", result.status)
                     ReportRow("Recipe", result.recipeId)
-                    ReportRow("Foreground", if (result.maskUsed) "Regional mask available for local adjustments" else "No reliable regional mask")
+                    ReportRow("Processing", "Classical offline image processing; no AI")
+                    ReportRow("Scope", "Whole photo; guided local light where supported")
                     ReportRow("Mean RGB change", "%.2f / 255".format(result.damage.meanChange))
                     ReportRow("New clipping", "%.3f%%".format(result.damage.newlyClipped * 100))
                     result.reasons.forEach { ReportRow("Processing", it) }
