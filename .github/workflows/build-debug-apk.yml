@@ -23,78 +23,16 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
-      - name: Require no ML models or inference frameworks in Android release
+      - name: Verify Android sources and bundled resources contain NO AI
         run: |
           set -euo pipefail
           ! grep -F "com.microsoft.onnxruntime" app/build.gradle.kts
           ! grep -R -E 'import (ai.onnxruntime|org.tensorflow)' app/src/main/java
-          if [ -d app/src/main/assets ] && find app/src/main/assets -type f | grep -E 'onnx$|tflite$|pth$|pt$'; then
-      - name: Prepare Gradle wrapper
-        run: chmod +x gradlew
-      - name: Prepare public-domain real-photo inputs for review
-        run: |
-          python -m pip install 'scikit-image==0.25.2'
-          python research/quality/prepare_public_photos.py --output-dir app/build/public-photo-input
-      - name: Run full Android unit tests (required; failures block APK)
-        env:
-          PHOTO_COMPARE_INPUT: ${{ github.workspace }}/app/build/public-photo-input
-          PHOTO_COMPARE_OUTPUT: ${{ github.workspace }}/app/build/public-photo-pairs
-        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
-      - name: Emit small public-photo before-after sheet for visual review
-        run: |
-          python research/quality/make_contact_sheet.py \
-            --directory app/build/public-photo-pairs \
-            --output app/build/public-photo-pairs/contact-sheet.jpg \
-            --label "V9.6 classical NO AI"
-      - name: Build independently signed debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-      - name: Verify APK is present and nonempty
-        run: test -s app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-      - name: Verify signed APK and native alignment
-        run: |
-          APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
-      - name: Verify installed APK version and give APK an unambiguous name
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-          BADGING="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "versionCode='15'"
-          echo "$BADGING" | grep -F "versionName='1.5.6-v9.6-classical-no-ai'"
-          cp "$APK" app/build/outputs/apk/debug/FilterSlap-V9.6-classical-NO-AI.apk
-      - name: Upload test reports for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-reports
-          path: app/build/reports/tests/testDebugUnitTest/
-          if-no-files-found: ignore
-      - name: Upload before-after photo comparisons for human review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: V9-6-NO-AI-CC0-photo-comparisons-REVIEW
-          path: app/build/public-photo-pairs/
-          if-no-files-found: warn
-      - name: Confirm APK includes no AI inference weights or ONNX runtime
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/apk/debug/FilterSlap-V9.6-classical-NO-AI.apk
-          if unzip -Z1 "$APK" | grep -Ei 'onnx$|tflite$|pth$|pt$|libonnxruntime|libtensorflowlite'; then
-            echo "ERROR: AI-related model/inference payload found in NO-AI app"
-            exit 1
-          fi
-          echo "APK contains no machine-learning weights or ONNX/TFLite runtime."
-      - name: Upload freshly built debug candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: FilterSlap-V9.6-classical-NO-AI-experimental
-          path: app/build/outputs/apk/debug/FilterSlap-V9.6-classical-NO-AI.apk
-          if-no-files-found: error
-; then
-            echo "Unexpected model weight asset in classical application"
-            exit 1
+          if [ -d app/src/main/assets ]; then
+            if find app/src/main/assets -type f | grep -Ei 'onnx$|tflite$|pth$|pt$'; then
+              echo "Model file present in the NO-AI app"
+              exit 1
+            fi
           fi
       - name: Prepare Gradle wrapper
         run: chmod +x gradlew
@@ -144,15 +82,15 @@ jobs:
           name: V9-6-NO-AI-CC0-photo-comparisons-REVIEW
           path: app/build/public-photo-pairs/
           if-no-files-found: warn
-      - name: Confirm APK includes no AI inference weights or ONNX runtime
+      - name: Ensure APK has no model weights or native inference engine
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/debug/FilterSlap-V9.6-classical-NO-AI.apk
           if unzip -Z1 "$APK" | grep -Ei 'onnx$|tflite$|pth$|pt$|libonnxruntime|libtensorflowlite'; then
-            echo "ERROR: AI-related model/inference payload found in NO-AI app"
+            echo "AI model/inference binary is not permitted in the NO-AI APK"
             exit 1
           fi
-          echo "APK contains no machine-learning weights or ONNX/TFLite runtime."
+          echo "Verified: APK contains no learned model assets or inference runtimes."
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
