@@ -19,7 +19,11 @@ import java.security.MessageDigest
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ActualTrainedStrengthTest {
     @Test fun trainedModelRunsOnIndependentHeldOutSourcesAndPreservesFallback() {
-        val sourceDir=File(requireNotNull(System.getenv("TRAINED_TEST_SOURCE")))
+        // Research datasets and trained weights are deliberately never shipped.
+        // Run this test only in the explicit rights-restricted research workflow.
+        val sourcePath=System.getenv("TRAINED_TEST_SOURCE")
+        org.junit.Assume.assumeTrue("Research data not provided",sourcePath!=null)
+        val sourceDir=File(requireNotNull(sourcePath))
         val outputs=File(requireNotNull(System.getenv("TRAINED_STRENGTH_OUTPUT")))
         val modelFile=File(requireNotNull(System.getenv("TRAINED_TEST_ONNX")))
         val mode=requireNotNull(System.getenv("TRAINED_TEST_MODE"))
