@@ -399,7 +399,7 @@ fun FilterSlapApp() {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
                         val exportRender = if (autoForExport)
-                            OfflineEnhancer.render(cropped, recipe, analysis) { jobContext.ensureActive() }
+                            OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
                             else null
                         val rendered = exportRender?.bitmap ?: cropped
                         var finalBitmap:Bitmap? = null
