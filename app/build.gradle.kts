@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.filterslap.qwezx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 12
-    versionName = "1.5.3-v9.3-coherent-tone-experimental"
+    versionCode = 15
+    versionName = "1.5.6-v9.6-classical-no-ai"
 
     val sourceRevision = providers.exec { commandLine("git", "rev-parse", "--short=12", "HEAD") }
       .standardOutput.asText.get().trim()
@@ -68,7 +68,6 @@ android {
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
-  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.30.0")
   implementation("org.boofcv:boofcv-android:0.43.1")
   implementation("org.boofcv:boofcv-core:0.43.1")
 
@@ -120,7 +119,6 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
-  testRuntimeOnly("com.microsoft.onnxruntime:onnxruntime:1.30.0")
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
