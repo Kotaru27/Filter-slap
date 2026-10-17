@@ -66,8 +66,8 @@ internal object UserModelStore {
         } ?: throw java.io.IOException("Unable to read selected ONNX model")
         validateOnnx(data)
         val hash=digest(data)
-        val file=File(context.filesDir,NAME)
-        val tmp=File(context.filesDir,NAME+".tmp")
+        val file=File(context.noBackupFilesDir,NAME)
+        val tmp=File(context.noBackupFilesDir,NAME+".tmp")
         try {
             tmp.outputStream().use {
                 it.write(data)
@@ -86,7 +86,7 @@ internal object UserModelStore {
         val expected=context.getSharedPreferences(PREFERENCES,Context.MODE_PRIVATE)
             .getString(PREF_HASH,null) ?:return null
         if(!expected.matches(Regex("[0-9a-f]{64}")))return null
-        val file=File(context.filesDir,NAME)
+        val file=File(context.noBackupFilesDir,NAME)
         if(!file.isFile || file.length() !in 1..MAX_BYTES.toLong())return null
         val bytes=file.readBytes()
         if(!digest(bytes).equals(expected,ignoreCase=true))return null
@@ -96,6 +96,6 @@ internal object UserModelStore {
     fun clear(context:Context) {
         context.getSharedPreferences(PREFERENCES,Context.MODE_PRIVATE)
             .edit().remove(PREF_HASH).apply()
-        File(context.filesDir,NAME).delete()
+        File(context.noBackupFilesDir,NAME).delete()
     }
 }
