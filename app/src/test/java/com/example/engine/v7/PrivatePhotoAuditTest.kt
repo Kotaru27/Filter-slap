@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.test.core.app.ApplicationProvider
 import com.example.engine.ImageAnalyzer
-import com.example.engine.v6.V6AdaptiveEditor
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -43,25 +42,24 @@ class PrivatePhotoAuditTest {
         assertTrue(notes.isNotEmpty())
         File(directory,"reference-audit.txt").writeText(notes.joinToString("\n"))
     }
-    @Test fun `real photo uses actual bundled models and export recipe`() {
+    @Test fun `real photo uses classical processing and identical full resolution export`() {
         val input=System.getenv("FILTER_SLAP_AUDIT_INPUT")
         assumeTrue(input!=null && File(input).isFile)
         val source=BitmapFactory.decodeFile(input)!!
         val context=ApplicationProvider.getApplicationContext<Context>()
-        val analysis=ImageAnalyzer.analyze(source)
-        val legacy=V6AdaptiveEditor.process(context,source,analysis)
-        val result=OfflineEnhancer.process(context,source,analysis)
-        assertTrue(result.outcome!!.damage.safe)
-        assertTrue("Learned model did not run: ${result.outcome}",result.recipe!!.modelStrength>0f)
-        assertNotNull("Foreground model was unavailable or uncertain",result.recipe!!.mask)
-        assertTrue(result.outcome!!.damage.meanChange>2f)
-        val export=OfflineEnhancer.render(source,result.recipe!!,analysis)
-        assertTrue(export.bitmap.sameAs(result.bitmap))
-        val directory=File(System.getenv("FILTER_SLAP_AUDIT_OUTPUT") ?: System.getProperty("java.io.tmpdir"))
-        directory.mkdirs()
-        File(directory,"v7-photo-output.jpg").outputStream().use { result.bitmap.compress(Bitmap.CompressFormat.JPEG,95,it) }
-        File(directory,"v6-photo-output.jpg").outputStream().use { legacy.bitmap.compress(Bitmap.CompressFormat.JPEG,95,it) }
-        File(directory,"v7-photo-diagnostics.txt").writeText("Legacy: ${legacy.appliedPlan}\nV7: ${result.outcome}\nRecipe: ${result.appliedPlan}\n")
-        export.bitmap.recycle();result.bitmap.recycle();legacy.bitmap.recycle();source.recycle()
+        try {
+            val analysis=ImageAnalyzer.analyze(source)
+            val result=OfflineEnhancer.process(context,source,analysis)
+            try {
+                assertTrue(result.outcome!!.damage.safe)
+                assertEquals(0f,result.recipe!!.modelStrength,0f)
+                assertNull("Model-based segmentation must never execute",result.recipe!!.mask)
+                assertEquals("V9_6_CLASSICAL_NO_AI",result.outcome!!.engine)
+                val export=OfflineEnhancer.render(source,result.recipe!!,analysis)
+                try {
+                    assertTrue(export.bitmap.sameAs(result.bitmap))
+                }finally { if(export.bitmap!==source)export.bitmap.recycle() }
+            }finally { if(result.bitmap!==source)result.bitmap.recycle() }
+        }finally{ source.recycle() }
     }
 }
