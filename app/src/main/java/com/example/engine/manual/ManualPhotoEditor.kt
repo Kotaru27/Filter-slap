@@ -56,6 +56,7 @@ object ManualPhotoEditor {
         val output=Bitmap.createBitmap(input.width,input.height,Bitmap.Config.ARGB_8888)
         val source=IntArray(input.width)
         val dest=IntArray(input.width)
+        val neutralSettings = adjustments.isNeutral
         val evGain=2.0.pow(adjustments.exposure.toDouble()).toFloat()
         val contrastGain=1f+adjustments.contrast*.0075f
         val shadowAmt=adjustments.shadows*.0022f
@@ -76,7 +77,7 @@ object ManualPhotoEditor {
                 val ny=(2f*y/cy-1f)
                 for(x in source.indices) {
                     val pixel=source[x]
-                    if(adjustments.isNeutral) {
+                    if(neutralSettings) {
                         dest[x]=pixel
                         continue
                     }
