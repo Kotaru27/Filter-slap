@@ -26,6 +26,13 @@ import java.security.MessageDigest
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class OpenPhotoVisualReviewTest {
     @Test fun renderCc0OpenPhotosThroughBothRealAndroidEngines() {
+        // This audit is only meaningful with the separately trained,
+        // restricted research checkpoint. Ordinary public build CI NEVER
+        // bundles that model; skip rather than synthesize fake weights.
+        org.junit.Assume.assumeTrue(
+            "Research-only trained checkpoint not present",
+            System.getenv("TRAINED_TEST_ONNX")!=null
+        )
         val input=File(requireNotNull(System.getenv("OPEN_PHOTO_INPUT")))
         val destination=File(requireNotNull(System.getenv("OPEN_PHOTO_OUTPUT")))
         val model=File(requireNotNull(System.getenv("TRAINED_TEST_ONNX")))
