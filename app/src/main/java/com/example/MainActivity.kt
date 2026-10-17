@@ -852,11 +852,13 @@ private fun EditorScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ManualEditorSheet(
+private fun ManualEditorTray(
     values: ManualAdjustments,
     enabled: Boolean,
     useAutoBase: Boolean,
     onAutoBaseChanged: (Boolean) -> Unit,
+    selectedCrop: CropFrame,
+    onCropChanged: (CropFrame) -> Unit,
     canUndo: Boolean,
     canRedo: Boolean,
     onChange: (ManualAdjustments) -> Unit,
@@ -864,94 +866,105 @@ private fun ManualEditorSheet(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onReset: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF12161A),
-        scrimColor = Color.Black.copy(alpha=.60f)
+    var activeControl by remember { mutableStateOf("Exposure") }
+    val controls = listOf(
+        ManualTool("Exposure",values.exposure,-2f..2f,"EV"){values.copy(exposure=it)},
+        ManualTool("Contrast",values.contrast,-100f..100f){values.copy(contrast=it)},
+        ManualTool("Highlights",values.highlights,-100f..100f){values.copy(highlights=it)},
+        ManualTool("Shadows",values.shadows,-100f..100f){values.copy(shadows=it)},
+        ManualTool("Whites",values.whites,-100f..100f){values.copy(whites=it)},
+        ManualTool("Blacks",values.blacks,-100f..100f){values.copy(blacks=it)},
+        ManualTool("Warmth",values.temperature,-100f..100f){values.copy(temperature=it)},
+        ManualTool("Tint",values.tint,-100f..100f){values.copy(tint=it)},
+        ManualTool("Vibrance",values.vibrance,-100f..100f){values.copy(vibrance=it)},
+        ManualTool("Saturation",values.saturation,-100f..100f){values.copy(saturation=it)},
+        ManualTool("Vignette",values.vignette,0f..100f){values.copy(vignette=it)}
+    )
+    val selected = controls.firstOrNull { it.name==activeControl } ?: controls.first()
+    Column(
+        modifier=modifier.fillMaxWidth()
+            .background(Color(0xFF12161A),
+                RoundedCornerShape(topStart=24.dp,topEnd=24.dp))
+            .border(1.dp,GlassStroke,
+                RoundedCornerShape(topStart=24.dp,topEnd=24.dp))
+            .navigationBarsPadding()
+            .padding(horizontal=16.dp,vertical=9.dp)
     ) {
-        Column(
-            modifier=Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal=22.dp).padding(bottom=36.dp)
-        ) {
-            Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()) {
-                Column(modifier=Modifier.weight(1f)) {
-                    Text("Edit photo",fontSize=22.sp,fontWeight=FontWeight.Bold,color=TextPrimary)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Manual · offline · non-destructive",fontSize=12.sp,color=TextSecondary)
-                }
-                TextButton(onClick=onUndo,enabled=enabled && canUndo) {
-                    Text("Undo",color=if(canUndo)Accent else TextSecondary)
-                }
-                TextButton(onClick=onRedo,enabled=enabled && canRedo) {
-                    Text("Redo",color=if(canRedo)Accent else TextSecondary)
-                }
-                TextButton(onClick=onReset,enabled=enabled && !values.isNeutral) {
-                    Text("Reset",color=if(values.isNeutral)TextSecondary else Accent)
-                }
+        Row(modifier=Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Text("Edit",fontSize=17.sp,fontWeight=FontWeight.Bold,color=TextPrimary)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick=onUndo,enabled=enabled && canUndo,contentPadding=PaddingValues(horizontal=7.dp)) {
+                Text("Undo",fontSize=12.sp,color=if(canUndo)Accent else TextSecondary)
             }
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                FilterChip(
-                    selected=!useAutoBase,
-                    onClick={onAutoBaseChanged(false)},
-                    enabled=enabled,
-                    label={Text("Original",fontSize=13.sp)},
-                    colors=FilterChipDefaults.filterChipColors(
-                        selectedContainerColor=Accent, selectedLabelColor=Color(0xFF1A1205))
-                )
-                FilterChip(
-                    selected=useAutoBase,
-                    onClick={onAutoBaseChanged(true)},
-                    enabled=enabled,
-                    label={Text("Auto starting point",fontSize=13.sp)},
-                    colors=FilterChipDefaults.filterChipColors(
-                        selectedContainerColor=Accent, selectedLabelColor=Color(0xFF1A1205))
-                )
+            TextButton(onClick=onRedo,enabled=enabled && canRedo,contentPadding=PaddingValues(horizontal=7.dp)) {
+                Text("Redo",fontSize=12.sp,color=if(canRedo)Accent else TextSecondary)
             }
-            Spacer(Modifier.height(12.dp))
-            Text("LIGHT",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
-            Spacer(Modifier.height(8.dp))
-            ManualControl("Exposure",values.exposure,-2f..2f,enabled,"EV",
-                onValueChange={onChange(values.copy(exposure=it))},onFinished=onChangeFinished)
-            ManualControl("Contrast",values.contrast,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(contrast=it))},onFinished=onChangeFinished)
-            ManualControl("Highlights",values.highlights,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(highlights=it))},onFinished=onChangeFinished)
-            ManualControl("Shadows",values.shadows,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(shadows=it))},onFinished=onChangeFinished)
-            ManualControl("Whites",values.whites,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(whites=it))},onFinished=onChangeFinished)
-            ManualControl("Blacks",values.blacks,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(blacks=it))},onFinished=onChangeFinished)
-            Spacer(Modifier.height(16.dp))
-            Text("COLOR",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
-            Spacer(Modifier.height(8.dp))
-            ManualControl("Temperature",values.temperature,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(temperature=it))},onFinished=onChangeFinished)
-            ManualControl("Tint",values.tint,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(tint=it))},onFinished=onChangeFinished)
-            ManualControl("Vibrance",values.vibrance,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(vibrance=it))},onFinished=onChangeFinished)
-            ManualControl("Saturation",values.saturation,-100f..100f,enabled,
-                onValueChange={onChange(values.copy(saturation=it))},onFinished=onChangeFinished)
-            Spacer(Modifier.height(16.dp))
-            Text("FINISH",fontSize=11.sp,fontWeight=FontWeight.Bold,color=Accent,letterSpacing=1.8.sp)
-            Spacer(Modifier.height(8.dp))
-            ManualControl("Vignette",values.vignette,0f..100f,enabled,
-                onValueChange={onChange(values.copy(vignette=it))},onFinished=onChangeFinished)
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick=onDismiss,
-                enabled=enabled,
-                shape=RoundedCornerShape(24.dp),
-                colors=ButtonDefaults.buttonColors(containerColor=Accent,contentColor=Color(0xFF1A1205)),
-                modifier=Modifier.fillMaxWidth().height(50.dp)
-            ) { Text("Done editing",fontWeight=FontWeight.SemiBold) }
+            TextButton(onClick=onReset,enabled=enabled && !values.isNeutral,contentPadding=PaddingValues(horizontal=7.dp)) {
+                Text("Reset",fontSize=12.sp,color=if(!values.isNeutral)Accent else TextSecondary)
+            }
+            TextButton(onClick=onDismiss,contentPadding=PaddingValues(horizontal=7.dp)) {
+                Text("Done",fontSize=13.sp,color=Accent,fontWeight=FontWeight.SemiBold)
+            }
         }
+        Row(
+            modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement=Arrangement.spacedBy(8.dp),
+            verticalAlignment=Alignment.CenterVertically
+        ) {
+            FilterChip(selected=!useAutoBase,onClick={onAutoBaseChanged(false)},enabled=enabled,
+                label={Text("Original",fontSize=12.sp)},
+                colors=FilterChipDefaults.filterChipColors(
+                    selectedContainerColor=Accent,selectedLabelColor=Color(0xFF1A1205)))
+            FilterChip(selected=useAutoBase,onClick={onAutoBaseChanged(true)},enabled=enabled,
+                label={Text("Auto base",fontSize=12.sp)},
+                colors=FilterChipDefaults.filterChipColors(
+                    selectedContainerColor=Accent,selectedLabelColor=Color(0xFF1A1205)))
+            CropFrame.entries.forEach { frame ->
+                FilterChip(selected=frame==selectedCrop,
+                    onClick={if(frame!=selectedCrop)onCropChanged(frame)},enabled=enabled,
+                    label={Text(frame.displayName,fontSize=11.sp)},
+                    colors=FilterChipDefaults.filterChipColors(
+                        selectedContainerColor=Color(0xFF3B4B48),
+                        selectedLabelColor=TextPrimary))
+            }
+        }
+        Row(
+            modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement=Arrangement.spacedBy(7.dp)
+        ) {
+            controls.forEach { control ->
+                FilterChip(
+                    selected=control.name==activeControl,
+                    onClick={activeControl=control.name},
+                    label={Text(control.name,fontSize=12.sp)},
+                    colors=FilterChipDefaults.filterChipColors(
+                        selectedContainerColor=Accent,selectedLabelColor=Color(0xFF1A1205),
+                        containerColor=Color(0xFF202830),labelColor=TextSecondary),
+                    border=FilterChipDefaults.filterChipBorder(enabled=true,selected=control.name==activeControl,
+                        borderColor=GlassStroke,selectedBorderColor=Color.Transparent)
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        ManualControl(selected.name,selected.value,selected.range,enabled,
+            selected.suffix,onValueChange={onChange(selected.change(it))},
+            onFinished=onChangeFinished)
+        Text("Hold the photo to compare with the original",
+            modifier=Modifier.align(Alignment.CenterHorizontally),
+            color=TextSecondary,fontSize=11.sp)
     }
 }
+
+private data class ManualTool(
+    val name:String,
+    val value:Float,
+    val range:ClosedFloatingPointRange<Float>,
+    val suffix:String="",
+    val change:(Float)->ManualAdjustments
+)
 
 @Composable
 private fun ManualControl(
