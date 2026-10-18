@@ -54,9 +54,7 @@ class PrivatePhotoAuditTest {
                 assertTrue(result.outcome!!.damage.safe)
                 assertEquals(0f,result.recipe!!.modelStrength,0f)
                 assertNull("Model-based segmentation must never execute",result.recipe!!.mask)
-                assertEquals(if(result.recipe!!.creativeGrade.isNeutral)
-                    "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI",
-                    result.outcome!!.engine)
+                assertEquals("V14_CLASSICAL_AUTOEDIT_NO_AI",result.outcome!!.engine)
                 val export=OfflineEnhancer.render(source,result.recipe!!,analysis)
                 try {
                     assertTrue(export.bitmap.sameAs(result.bitmap))
