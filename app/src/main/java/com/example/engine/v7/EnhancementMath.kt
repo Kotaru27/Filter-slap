@@ -232,7 +232,14 @@ class DamageAccumulator {
         if (maxOf(r,g,b) < 252 && maxOf(rr,gg,bb) >= 252) clipped++
         if (EnhancementMath.luma(original) >= 5f/255f && EnhancementMath.luma(output) < 5f/255f) crushed++
         val oldRange=maxOf(r,g,b)-minOf(r,g,b);val newRange=maxOf(rr,gg,bb)-minOf(rr,gg,bb)
-        if (oldRange > 114 && newRange > oldRange+26) vividBoosted++
+        // Absolute RGB range rises during ordinary brightening even if
+        // photographic saturation is unchanged. Judge relative chroma instead,
+        // otherwise recovering a dim colorful photo is incorrectly rejected.
+        if (oldRange > 90 && newRange > oldRange+18) {
+            val oldSat=oldRange.toFloat()/maxOf(r,g,b).coerceAtLeast(1)
+            val newSat=newRange.toFloat()/maxOf(rr,gg,bb).coerceAtLeast(1)
+            if (newSat > oldSat+.13f) vividBoosted++
+        }
         if (oldRange > 40 && newRange > 40) {
             val a=(r-g).toFloat();val c=(r+g-2*b)/1.7320508f
             val aa=(rr-gg).toFloat();val cc=(rr+gg-2*bb)/1.7320508f
