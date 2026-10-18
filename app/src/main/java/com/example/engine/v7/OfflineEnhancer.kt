@@ -76,7 +76,7 @@ object OfflineEnhancer {
             val detail=.16f*(1f-nativeNoise/3.5f).coerceIn(0f,1f)
             val denoise=((nativeNoise-.8f)/6f).coerceIn(0f,.35f)
             notes += "Native noise estimate %.2f levels; detail and denoise bounded".format(nativeNoise)
-            val fingerprint="classical-srgb-guided-tone-v1-no-ai"
+            val fingerprint="classical-auto-photo-grading-v13-no-ai"
             val digest=MessageDigest.getInstance("SHA-256")
             for(p in pixels) {
                 digest.update((p ushr 24).toByte());digest.update((p ushr 16).toByte())
@@ -325,7 +325,7 @@ object OfflineEnhancer {
                 !recipe.creativeGrade.isNeutral -> "Classical full-frame photographic color and tone grading; no AI model used"
                 else -> "Classical full-frame and edge-aware tonal corrections; no AI model used"
             }
-            val engine=if(recipe.creativeGrade.isNeutral) "V9_6_CLASSICAL_NO_AI" else "V12_CLASSICAL_CREATIVE_NO_AI"
+            val engine=if(recipe.creativeGrade.isNeutral) "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI"
             val outcome=EnhancementOutcome(status,engine,recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
