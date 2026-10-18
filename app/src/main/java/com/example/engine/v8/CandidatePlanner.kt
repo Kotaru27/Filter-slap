@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import com.example.engine.v9.SpatialQuality
+import com.example.engine.creative.CreativeGrade
 import com.example.engine.v9.ChromaticIntegrityReport
 
 /**
@@ -36,12 +37,14 @@ data class CandidateSettings(
     val backgroundContrast: Float = 0f,
     val spatialStrength: Float = 0f,
     val coherentShadows: Float = 0f,
-    val coherentHighlights: Float = 0f
+    val coherentHighlights: Float = 0f,
+    val creativeGrade: CreativeGrade = CreativeGrade()
 ) {
     val isNeutral get() = lutStrength == 0f && exposureEv == 0f && subjectEv == 0f &&
         backgroundEv == 0f && contrast == 0f && subjectContrast == 0f &&
         backgroundContrast == 0f && spatialStrength == 0f &&
         coherentShadows == 0f && coherentHighlights == 0f &&
+        creativeGrade.isNeutral &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
 }
 
