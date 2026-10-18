@@ -136,6 +136,15 @@ object AutoPhotography {
         val residual=sourceY-sourceBase
         val detailWindow=1f-smooth(.035f,.11f,abs(residual))
         target+=treatment.clarity*residual*detailWindow*smooth(.07f,.21f,sourceY)
+        // Retain photographic blacks already present in the source. The
+        // safety gate must not mistake a shaped tone curve for permission to
+        // crush recoverable near-black shades into solid black.
+        val blackProtection=smooth(.018f,.115f,sourceY)
+        if(target<sourceY)
+            target=sourceY+(target-sourceY)*blackProtection
+        // Bright source channels retain highlight headroom before gamut mapping.
+        if(target>sourceY)
+            target=sourceY+(target-sourceY)*(1f-smooth(.91f,.985f,sourceY))
         target=target.coerceIn(.003f,.997f)
         val scale=target/y
         var rr=r*scale;var gg=g*scale;var bb=b*scale
