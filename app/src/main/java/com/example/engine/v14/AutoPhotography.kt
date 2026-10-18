@@ -87,10 +87,18 @@ object AutoPhotography {
         val compressed=((.67f-range)/.34f).coerceIn(0f,1f)
         val bright=((e.p90-.74f)/.22f).coerceIn(0f,1f)
         val dim=if(e.lowKey)0f else ((.51f-e.median)/.27f).coerceIn(0f,1f)
+        // Flat midtone photographs usually need separation, NOT another
+        // broad brightness lift. Very dark non-low-key inputs still need it.
+        val midtoneRecoveryWeight=when {
+            e.median<.36f -> .70f
+            compressed>.30f -> .20f
+            else -> .50f
+        }
         val target=when {
             e.lowKey->(e.median+.015f).coerceIn(.07f,.34f)
             e.median>.65f->(e.median-.035f).coerceIn(.54f,.76f)
-            else->(e.median+(.52f-e.median)*.58f).coerceIn(.33f,.61f)
+            else->(e.median+(.52f-e.median)*midtoneRecoveryWeight)
+                .coerceIn(.30f,.61f)
         }
         // sRGB gamma tone recovery; preserve black and white.
         val gamma=(ln(target.coerceIn(.02f,.98f))/ln(e.median.coerceIn(.025f,.975f)))
