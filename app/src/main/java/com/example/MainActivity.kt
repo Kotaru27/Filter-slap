@@ -513,7 +513,7 @@ private fun WelcomeScreen(onOpenPhoto: () -> Unit, onShowHistory: () -> Unit, ha
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Your photo, professionally edited —\nautomatically. No filters to choose.",
+                "A complete photo edit in one tap.\nOffline. No sliders. No AI.",
                 fontSize = 15.sp,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
