@@ -7,6 +7,8 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.pow
 import com.example.engine.v9.CoherentTone
+import com.example.engine.creative.CreativeGrade
+import com.example.engine.creative.CreativeGrading
 
 /** Pure pixel operations shared by Android rendering and host regression tests. */
 object EnhancementMath {
@@ -124,6 +126,8 @@ object EnhancementMath {
             CoherentTone.difference(y,recipe.coherentShadows,recipe.coherentHighlights)
         val gain = if (y > .001f) toneDelta / y else 0f
         dest[0] += r * gain; dest[1] += g * gain; dest[2] += b * gain
+        // Whole-frame classical grade follows local corrections and precedes gamut safety.
+        CreativeGrading.apply(dest, recipe.creativeGrade)
         boundedDelta(r, g, b, dest)
         val rr = (dest[0]*255f + .5f).toInt().coerceIn(0,255)
         val gg = (dest[1]*255f + .5f).toInt().coerceIn(0,255)
@@ -185,13 +189,15 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
     val redGain: Float = 1f, val greenGain: Float = 1f, val blueGain: Float = 1f,
     val strategy: String = "Legacy", val backgroundContrast: Float = 0f,
     val spatialStrength: Float = 0f, val noiseLevels: Float = 1f,
-    val coherentShadows: Float = 0f, val coherentHighlights: Float = 0f) {
+    val coherentShadows: Float = 0f, val coherentHighlights: Float = 0f,
+    val creativeGrade: CreativeGrade = CreativeGrade()) {
     private val table = lut?.copyOf()
     val isIdentity get() = modelStrength == 0f && globalLift == 0f &&
         subjectLift == 0f && detailStrength == 0f && noiseStrength == 0f &&
         exposureEv == 0f && subjectEv == 0f && backgroundEv == 0f &&
         contrast == 0f && subjectContrast == 0f && backgroundContrast == 0f &&
         spatialStrength == 0f && coherentShadows == 0f && coherentHighlights == 0f &&
+        creativeGrade.isNeutral &&
         redGain == 1f && greenGain == 1f && blueGain == 1f
     internal fun lookup(r: Float, g: Float, b: Float, dest: FloatArray) {
         if (table == null || modelStrength == 0f) {
@@ -204,7 +210,7 @@ class EditRecipe internal constructor(lut: FloatArray?, val mask: MaskField?,
         exposureEv*factor,subjectEv*factor,backgroundEv*factor,contrast*factor,subjectContrast*factor,
         1f+(redGain-1f)*factor,1f+(greenGain-1f)*factor,1f+(blueGain-1f)*factor,
         strategy,backgroundContrast*factor,spatialStrength*factor,noiseLevels,
-        coherentShadows*factor,coherentHighlights*factor)
+        coherentShadows*factor,coherentHighlights*factor,creativeGrade.scaled(factor))
 }
 
 /** Counts newly damaged samples; recovered pixels elsewhere cannot cancel these counts. */
