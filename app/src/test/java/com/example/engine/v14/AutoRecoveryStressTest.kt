@@ -65,7 +65,8 @@ class AutoRecoveryStressTest {
                     try {
                         val output=OfflineEnhancer.process(context,flawed,
                             ImageAnalyzer.analyze(flawed))
-                        revised=output.bitmap
+                        val edited=output.bitmap
+                        revised=edited
                         assertEquals("V14_CLASSICAL_AUTOEDIT_NO_AI",output.outcome!!.engine)
                         assertTrue(output.outcome!!.damage.safe)
                         val label=when(v){0->"dark";1->"flat";else->"cast"}
@@ -74,7 +75,7 @@ class AutoRecoveryStressTest {
                             assertTrue(flawed.compress(Bitmap.CompressFormat.PNG,100,it))
                         }
                         File(destination,name+"-edited.png").outputStream().use {
-                            assertTrue(revised.compress(Bitmap.CompressFormat.PNG,100,it))
+                            assertTrue(edited.compress(Bitmap.CompressFormat.PNG,100,it))
                         }
                         val a=IntArray(original.width);val b=IntArray(original.width)
                         val c=IntArray(original.width)
@@ -82,7 +83,7 @@ class AutoRecoveryStressTest {
                         for(y in 0 until original.height) {
                             original.getPixels(a,0,a.size,0,y,a.size,1)
                             flawed.getPixels(b,0,b.size,0,y,b.size,1)
-                            revised.getPixels(c,0,c.size,0,y,c.size,1)
+                            edited.getPixels(c,0,c.size,0,y,c.size,1)
                             for(x in a.indices) {
                                 srcErr+=abs(luma(a[x])-luma(b[x]))
                                 outErr+=abs(luma(a[x])-luma(c[x]))
