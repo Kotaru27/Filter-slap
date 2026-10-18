@@ -79,4 +79,35 @@ class CreativeGradingTest {
         assertEquals(.11f,value.scaled(.5f).contrast,0.00001f)
         assertEquals(.125f,value.scaled(.5f).highlightShoulder,0.00001f)
     }
+
+    @Test fun monochromeRemainsMonochromeAfterAutomaticGrading() {
+        val before=tones(.11f,.47f,.82f)
+        val source=pixels(600,94,94,94)
+        val selected=CreativeGrading.propose(before,source,false)
+        selected.forEach {
+            assertEquals(0f,it.creativeGrade.vibrance,0f)
+            assertEquals(0f,it.creativeGrade.shadowWarmth,0f)
+            assertEquals(0f,it.creativeGrade.highlightWarmth,0f)
+            val rgb=floatArrayOf(.32f,.32f,.32f)
+            CreativeGrading.apply(rgb,it.creativeGrade)
+            assertEquals(rgb[0],rgb[1],0.00001f)
+            assertEquals(rgb[1],rgb[2],0.00001f)
+        }
+        val fabricated=pixels(600,108,94,91)
+        assertTrue(CreativeGrading.colorBenefit(source,fabricated)<0f)
+    }
+
+    @Test fun intentionalLowKeySceneIsNotAutoBrightened() {
+        val dark=tones(.03f,.20f,.54f)
+        CreativeGrading.propose(dark,pixels(700,49,51,59),true).forEach {
+            assertEquals(0f,it.creativeGrade.midtoneLift,0f)
+        }
+    }
+
+    @Test fun creativeColorScoreDoesNotRewardOversaturation() {
+        val vivid=pixels(1000,208,39,27)
+        val oversaturated=pixels(1000,255,0,0)
+        assertTrue(CreativeGrading.colorBenefit(vivid,oversaturated)<0f)
+    }
+
 }
