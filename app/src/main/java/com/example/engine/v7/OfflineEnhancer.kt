@@ -107,7 +107,13 @@ object OfflineEnhancer {
                         spatialStrength=(.52f+.40f*localEvidence.recoverableFraction)
                             .coerceIn(.52f,.88f)))
                 else emptyList()
-                val proposals=CandidatePlanner.propose(evidence,false) + creative + hybrid
+                // Whole-frame color and tone plus signed local dodge/burn candidate.
+                // The signed local term uses edge-aware source illumination, not AI.
+                val layered = if(!intentionalDark) listOf(
+                    CandidateSettings("Automatic layered light editing",
+                        creativeGrade=creative[1].creativeGrade,spatialStrength=.68f))
+                    else emptyList()
+                val proposals=CandidatePlanner.propose(evidence,false) + creative + hybrid + layered
                 val assessments=mutableListOf<CandidateAssessment>()
                 val candidates=mutableListOf<EditRecipe>()
                 for(strategy in proposals) {
@@ -280,9 +286,13 @@ object OfflineEnhancer {
                             EnhancementMath.luma(source[left])+EnhancementMath.luma(source[x])+EnhancementMath.luma(source[right])+
                             EnhancementMath.luma(bottom[left])+EnhancementMath.luma(bottom[x])+EnhancementMath.luma(bottom[right]))/9f
                     }
-                    val spatialLift=illumination?.liftAt((x+.5f)/width,(y+.5f)/height,
-                        EnhancementMath.luma(source[x]),recipe.spatialStrength) ?: 0f
-                    dest[x]=EnhancementMath.edit(source[x],foreground,recipe,neighbourhood,rgb,spatialLift)
+                    val u=(x+.5f)/width;val v=(y+.5f)/height
+                    val sourceY=EnhancementMath.luma(source[x])
+                    val spatialLift=illumination?.liftAt(u,v,sourceY,recipe.spatialStrength) ?: 0f
+                    val spatialDepth=if(recipe.creativeGrade.isNeutral) 0f else
+                        illumination?.depthAt(u,v,sourceY,recipe.spatialStrength) ?: 0f
+                    dest[x]=EnhancementMath.edit(source[x],foreground,recipe,neighbourhood,rgb,
+                        spatialLift+spatialDepth)
                     damage.add(source[x],dest[x])
                 }
                 output?.setPixels(dest,0,width,0,y,width,1)
@@ -301,6 +311,8 @@ object OfflineEnhancer {
             decision("Contrast","Subject",abs(recipe.subjectContrast))
             decision("Contrast","Background",abs(recipe.backgroundContrast))
             decision("LocalToneRecovery","Spatial",recipe.spatialStrength)
+            if(!recipe.creativeGrade.isNeutral)
+                decision("LocalDodgeBurn","Spatial",recipe.spatialStrength)
             decision("Shadows","Global",recipe.coherentShadows)
             decision("Highlights","Global",recipe.coherentHighlights)
             decision("CreativeTone","Global",recipe.creativeGrade.contrast +
