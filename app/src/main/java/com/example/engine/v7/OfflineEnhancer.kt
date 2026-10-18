@@ -17,6 +17,7 @@ import com.example.engine.v9.SpatialIllumination
 import com.example.engine.v9.SpatialQuality
 import com.example.engine.v9.ChromaticIntegrity
 import com.example.engine.creative.CreativeGrading
+import com.example.engine.v14.AutoPhotography
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlin.math.abs
@@ -27,7 +28,7 @@ import kotlin.math.min
 object OfflineEnhancer {
     fun process(context: Context, input: Bitmap, analysis: AnalysisResult,
                 checkCancelled: () -> Unit = {}): RenderResult {
-        var recipe=prepare(context,input,analysis,checkCancelled)
+        var recipe=AutoPhotography.prepare(input,analysis,checkCancelled)
         repeat(4) {
             try { return render(input,recipe,analysis,checkCancelled) }
             catch (unsafe: UnsafeRenderException) {
@@ -251,7 +252,7 @@ object OfflineEnhancer {
         val source=IntArray(width);val top=IntArray(width);val bottom=IntArray(width);val dest=IntArray(width)
         val rgb=FloatArray(3)
         val damage=DamageAccumulator()
-        val illumination=if(recipe.spatialStrength>0f) {
+        val illumination=if(recipe.spatialStrength>0f || !recipe.photoTreatment.isNeutral) {
             val sc=min(1f,320f/max(width,height))
             val sw=max(1,(width*sc+.5f).toInt())
             val sh=max(1,(height*sc+.5f).toInt())
@@ -282,7 +283,13 @@ object OfflineEnhancer {
                     }
                     val spatialLift=illumination?.liftAt((x+.5f)/width,(y+.5f)/height,
                         EnhancementMath.luma(source[x]),recipe.spatialStrength) ?: 0f
-                    dest[x]=EnhancementMath.edit(source[x],foreground,recipe,neighbourhood,rgb,spatialLift)
+                    val originalY=EnhancementMath.luma(source[x])
+                    val base=if(!recipe.photoTreatment.isNeutral)
+                        illumination?.baseAt((x+.5f)/width,(y+.5f)/height,originalY)
+                            ?:originalY
+                    else originalY
+                    dest[x]=EnhancementMath.edit(source[x],foreground,recipe,
+                        neighbourhood,rgb,spatialLift,base)
                     damage.add(source[x],dest[x])
                 }
                 output?.setPixels(dest,0,width,0,y,width,1)
@@ -308,6 +315,11 @@ object OfflineEnhancer {
                 abs(recipe.creativeGrade.midtoneLift))
             decision("CreativeColor","Global",recipe.creativeGrade.vibrance +
                 abs(recipe.creativeGrade.shadowWarmth) + abs(recipe.creativeGrade.highlightWarmth))
+            decision("PhotoTone","Global",abs(recipe.photoTreatment.gamma-1f)+
+                recipe.photoTreatment.contrast+recipe.photoTreatment.shoulder)
+            decision("PhotoLocal","Local illumination",recipe.photoTreatment.shadow+
+                recipe.photoTreatment.clarity)
+            decision("PhotoColor","Global",abs(recipe.photoTreatment.chroma-1f))
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
                 decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
@@ -316,16 +328,22 @@ object OfflineEnhancer {
             decision("NoiseReduction","Smooth regions",recipe.noiseStrength)
             val status=when {
                 recipe.isIdentity || report.meanChange < .25f -> "Original kept"
+                !recipe.photoTreatment.isNeutral -> "Edited"
                 !recipe.creativeGrade.isNeutral -> "Graded"
                 else -> "Enhanced"
             }
             if(status == "Original kept") decisions.clear()
             val scope=when {
                 recipe.isIdentity -> "Unedited original preserved"
+                !recipe.photoTreatment.isNeutral -> "Image-adaptive classical photographic development with edge-guided local light and independent tonal/color decisions; no AI"
                 !recipe.creativeGrade.isNeutral -> "Classical full-frame photographic color and tone grading; no AI model used"
                 else -> "Classical full-frame and edge-aware tonal corrections; no AI model used"
             }
-            val engine=if(recipe.creativeGrade.isNeutral) "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI"
+            val engine=when {
+                !recipe.photoTreatment.isNeutral -> "V14_CLASSICAL_AUTOEDIT_NO_AI"
+                !recipe.creativeGrade.isNeutral -> "V13_CLASSICAL_AUTOMATIC_NO_AI"
+                else -> "V9_6_CLASSICAL_NO_AI"
+            }
             val outcome=EnhancementOutcome(status,engine,recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
