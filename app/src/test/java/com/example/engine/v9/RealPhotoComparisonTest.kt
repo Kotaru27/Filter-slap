@@ -59,8 +59,8 @@ class RealPhotoComparisonTest {
                     "V9_6_CLASSICAL_NO_AI" else "V12_CLASSICAL_CREATIVE_NO_AI"
                 assertEquals(expectedEngine,outcome.engine)
                 assertEquals(expectedEngine,result.appliedPlan.profileName)
-                assertEquals("1.5.8-v12-creative-grading-no-ai",BuildConfig.VERSION_NAME)
-                assertEquals(17,BuildConfig.VERSION_CODE)
+                assertEquals("1.5.9-v13-automatic-no-ai",BuildConfig.VERSION_NAME)
+                assertEquals(18,BuildConfig.VERSION_CODE)
                 assertEquals("No pretrained model in classical mode",0f,result.recipe!!.modelStrength,0f)
                 assertNull("No model-based foreground segmentation in classical mode",result.recipe!!.mask)
                 assertTrue("Safety failed for ${file.name}",outcome.damage.safe)
