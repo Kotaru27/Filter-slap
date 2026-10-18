@@ -75,6 +75,7 @@ object CreativeGrading {
         val muted = ((.31f - color.meanChroma) / .25f).coerceIn(0f, 1f)
         val dim = if (intentionalDark) 0f else ((.46f - whole.median) / .28f).coerceIn(0f, 1f)
         val darkFactor = if (intentionalDark) .38f else 1f
+        val monochrome = color.meanChroma < .018f
         // Editorial-level tonal decisions from measured distributions, not
         // global fixed presets, image categories or a memorized test photograph.
         val warmth = (-color.warmBias * .04f).coerceIn(-.010f, .010f)
@@ -82,9 +83,9 @@ object CreativeGrading {
             contrast = (.29f + .21f * compressed) * darkFactor,
             shadowDepth = (.030f + .042f * compressed) * darkFactor,
             highlightShoulder = .12f + .23f * bright,
-            vibrance = (.055f + .15f * muted) * darkFactor,
-            shadowWarmth = -.008f + warmth * .45f,
-            highlightWarmth = .010f + warmth * .45f,
+            vibrance = if(monochrome) 0f else (.055f + .15f * muted) * darkFactor,
+            shadowWarmth = if(monochrome) 0f else -.008f + warmth * .45f,
+            highlightWarmth = if(monochrome) 0f else .010f + warmth * .45f,
             midtoneLift = .055f * dim
         )
         val restrained = base.scaled(.72f)
@@ -138,6 +139,8 @@ object CreativeGrading {
         if(source.isEmpty())return 0f
         val original=measureColor(source)
         val after=measureColor(edited)
+        // Monochrome originals should never earn a reward for invented color.
+        if(original.meanChroma < .018f) return -180f * after.meanChroma
         val muted=((.31f-original.meanChroma)/.22f).coerceIn(0f,1f)
         val gained=(after.meanChroma-original.meanChroma).coerceIn(0f,.12f)
         val loss=(original.meanChroma-after.meanChroma).coerceAtLeast(0f)
