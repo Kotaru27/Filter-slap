@@ -72,7 +72,8 @@ object AutoPhotography {
         val darkFraction=dark.toFloat()/pixels.size
         // Low-key scenes such as night skylines should not be made daytime-bright.
         // The criteria are continuous image measurements, not scene recognition.
-        val lowKey=mid<.31f && darkFraction>.48f && hi<.58f
+        val lowKey=mid<.42f && darkFraction>.27f && hi<.60f &&
+            (hi-lo)<.32f
         return PhotoEvidence(lo,mid,hi,darkFraction,(chroma/pixels.size).toFloat(),
             vivid.toFloat()/pixels.size,lowKey)
     }
