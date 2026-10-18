@@ -118,7 +118,7 @@ fun FilterSlapApp() {
     var manualUndo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
     var manualRedo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
     var showManualEditor by remember { mutableStateOf(false) }
-    var useAutoBase by remember { mutableStateOf(false) }
+    var useAutoBase by remember { mutableStateOf(true) }
 
     fun commitManual() {
         if (manualAdjustments != committedManual) {
@@ -215,9 +215,12 @@ fun FilterSlapApp() {
                         "Exposure" -> "${decision.regionMask} exposure correction"
                         "Contrast" -> "${decision.regionMask} contrast correction"
                         "LocalToneRecovery" -> "Spatial shadow and local-light recovery"
+                        "CreativeTone" -> "Adaptive photographic contrast, shadow depth and highlight roll-off"
                         else -> null
                     } }.distinct().joinToString(", ").ifEmpty { "Source tone retained" },
                     colorAdjustments = buildList {
+                        if (plan.decisions.any { it.parameter == "CreativeColor" })
+                            add("Scene-adaptive color vibrance and split toning")
                         if (outcome.modelStrength > 0f)
                             add("Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection")
                         if (plan.decisions.any { it.parameter == "WhiteBalance" })
@@ -280,7 +283,7 @@ fun FilterSlapApp() {
             manualUndo = emptyList()
             manualRedo = emptyList()
             showManualEditor = false
-            useAutoBase = false
+            useAutoBase = true
             cachedAnalysis = null
             reportAnalysis = null
             activePlan = null
