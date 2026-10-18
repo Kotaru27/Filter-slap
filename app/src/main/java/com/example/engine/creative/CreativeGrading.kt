@@ -129,7 +129,7 @@ object CreativeGrading {
         val toe = -grade.shadowDepth * y *
             (1f - smooth(.25f, .66f, y))
         val shoulder = -grade.highlightShoulder *
-            smooth(.47f, .96f, y) * (1f - y)
+            smooth(.60f, .90f, y) * (1f - y) * 2.4f
         val target = (y + contrast + toe + shoulder).coerceIn(.002f, .995f)
         val gain = target / y
         var rr = r * gain
