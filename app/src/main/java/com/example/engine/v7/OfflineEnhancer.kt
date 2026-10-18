@@ -16,6 +16,7 @@ import com.example.engine.v8.CandidateAssessment
 import com.example.engine.v9.SpatialIllumination
 import com.example.engine.v9.SpatialQuality
 import com.example.engine.v9.ChromaticIntegrity
+import com.example.engine.creative.CreativeGrading
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlin.math.abs
@@ -75,7 +76,7 @@ object OfflineEnhancer {
             val detail=.16f*(1f-nativeNoise/3.5f).coerceIn(0f,1f)
             val denoise=((nativeNoise-.8f)/6f).coerceIn(0f,.35f)
             notes += "Native noise estimate %.2f levels; detail and denoise bounded".format(nativeNoise)
-            val fingerprint="classical-srgb-guided-tone-v1-no-ai"
+            val fingerprint="classical-auto-photo-grading-v13-no-ai"
             val digest=MessageDigest.getInstance("SHA-256")
             for(p in pixels) {
                 digest.update((p ushr 24).toByte());digest.update((p ushr 16).toByte())
@@ -99,7 +100,14 @@ object OfflineEnhancer {
                 val evidence=CorrectionEvidence(before,intentionalDark,na.coverage,
                     na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB),
                     localEvidence.recoverableFraction)
-                val proposals=CandidatePlanner.propose(evidence,false)
+                val creative = CreativeGrading.propose(before,sourcePixels,intentionalDark)
+                val hybrid = if(!intentionalDark && localEvidence.recoverableFraction > .025f)
+                    listOf(CandidateSettings("Automatic dimensional local grade",
+                        creativeGrade=creative[1].creativeGrade,
+                        spatialStrength=(.52f+.40f*localEvidence.recoverableFraction)
+                            .coerceIn(.52f,.88f)))
+                else emptyList()
+                val proposals=CandidatePlanner.propose(evidence,false) + creative + hybrid
                 val assessments=mutableListOf<CandidateAssessment>()
                 val candidates=mutableListOf<EditRecipe>()
                 for(strategy in proposals) {
@@ -116,7 +124,7 @@ object OfflineEnhancer {
                         strategy.contrast,strategy.subjectContrast,
                         strategy.redGain,strategy.greenGain,strategy.blueGain,strategy.name,
                         strategy.backgroundContrast,strategy.spatialStrength,nativeNoise,
-                        strategy.coherentShadows,strategy.coherentHighlights)
+                        strategy.coherentShadows,strategy.coherentHighlights,strategy.creativeGrade)
                     candidates+=trial
                     val evaluation=try {
                         val rendered=render(sample,trial,analysis,checkCancelled)
@@ -128,9 +136,16 @@ object OfflineEnhancer {
                             rendered.bitmap.getPixels(editedPixels,0,sampleW,0,0,sampleW,sampleH)
                             val spatialQuality=SpatialQuality.compare(sourcePixels,editedPixels,sampleW,sampleH)
                             val colorIntegrity=ChromaticIntegrity.assess(sourcePixels,editedPixels)
-                            CandidatePlanner.assess(evidence,strategy,after,d.meanChange,
+                            val conventional = CandidatePlanner.assess(evidence,strategy,after,d.meanChange,
                                 d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted,
                                 beforeNeutral,afterNeutral,spatialQuality,colorIntegrity)
+                            if(conventional.safe && !strategy.creativeGrade.isNeutral) {
+                                val tonal=CreativeGrading.benefit(before,after,intentionalDark)
+                                val color=CreativeGrading.colorBenefit(sourcePixels,editedPixels)
+                                conventional.copy(score=conventional.score+tonal+color,
+                                    reason=conventional.reason+
+                                        "; creative tonal %.2f, color %.2f".format(tonal,color))
+                            } else conventional
                         } finally { rendered.bitmap.recycle() }
                     } catch(cancelled: CancellationException) { throw cancelled }
                     catch(unsafe: UnsafeRenderException) {
@@ -151,7 +166,7 @@ object OfflineEnhancer {
                     chosen.noiseStrength,chosen.exposureEv,chosen.subjectEv,chosen.backgroundEv,
                     chosen.contrast,chosen.subjectContrast,chosen.redGain,chosen.greenGain,chosen.blueGain,
                     chosen.strategy,chosen.backgroundContrast,chosen.spatialStrength,chosen.noiseLevels,
-                    chosen.coherentShadows,chosen.coherentHighlights)
+                    chosen.coherentShadows,chosen.coherentHighlights,chosen.creativeGrade)
             } finally { if(sample !== canonical) sample.recycle() }
         } finally { if(canonical !== input) canonical.recycle() }
     }
@@ -288,6 +303,11 @@ object OfflineEnhancer {
             decision("LocalToneRecovery","Spatial",recipe.spatialStrength)
             decision("Shadows","Global",recipe.coherentShadows)
             decision("Highlights","Global",recipe.coherentHighlights)
+            decision("CreativeTone","Global",recipe.creativeGrade.contrast +
+                recipe.creativeGrade.shadowDepth + recipe.creativeGrade.highlightShoulder +
+                abs(recipe.creativeGrade.midtoneLift))
+            decision("CreativeColor","Global",recipe.creativeGrade.vibrance +
+                abs(recipe.creativeGrade.shadowWarmth) + abs(recipe.creativeGrade.highlightWarmth))
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
                 decision("WhiteBalance","Global",.10f)
             decision("LocalShadows","Subject",recipe.subjectLift)
@@ -296,19 +316,22 @@ object OfflineEnhancer {
             decision("NoiseReduction","Smooth regions",recipe.noiseStrength)
             val status=when {
                 recipe.isIdentity || report.meanChange < .25f -> "Original kept"
+                !recipe.creativeGrade.isNeutral -> "Graded"
                 else -> "Enhanced"
             }
             if(status == "Original kept") decisions.clear()
             val scope=when {
                 recipe.isIdentity -> "Unedited original preserved"
+                !recipe.creativeGrade.isNeutral -> "Classical full-frame photographic color and tone grading; no AI model used"
                 else -> "Classical full-frame and edge-aware tonal corrections; no AI model used"
             }
-            val outcome=EnhancementOutcome(status,"V9_6_CLASSICAL_NO_AI",recipe.id,recipe.modelFingerprint,
+            val engine=if(recipe.creativeGrade.isNeutral) "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI"
+            val outcome=EnhancementOutcome(status,engine,recipe.id,recipe.modelFingerprint,
                 recipe.modelStrength,recipe.mask!=null,report,recipe.diagnostics+scope)
             // verifyOnly returns a borrowed input; it never transfers/recycles this bitmap.
             return RenderResult(output ?: input,ProcessingStats(System.currentTimeMillis()-started,
                 stagesApplied=decisions.map { it.parameter }.toSet()),
-                EditPlan(decisions,"V9_6_CLASSICAL_NO_AI",outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
+                EditPlan(decisions,engine,outcome.summary()+" · "+recipe.strategy),analysis,outcome,recipe)
         } catch(error: Throwable) {
             output?.recycle()
             throw error

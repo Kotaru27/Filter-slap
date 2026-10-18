@@ -50,7 +50,7 @@ jobs:
           python research/quality/make_contact_sheet.py \
             --directory app/build/public-photo-pairs \
             --output app/build/public-photo-pairs/contact-sheet.jpg \
-            --label "V9.7 manual editor, classical NO AI"
+            --label "V13 fully automatic classical grading, no AI"
       - name: Build independently signed debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
       - name: Verify APK is present and nonempty
@@ -65,9 +65,9 @@ jobs:
           set -euo pipefail
           APK=app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           BADGING="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -F "versionCode='16'"
-          echo "$BADGING" | grep -F "versionName='1.5.7-v9.7-manual-editor-no-ai'"
-          cp "$APK" app/build/outputs/apk/debug/FilterSlap-V9.7-manual-photo-editor-NO-AI.apk
+          echo "$BADGING" | grep -F "versionCode='18'"
+          echo "$BADGING" | grep -F "versionName='1.5.9-v13-automatic-no-ai'"
+          cp "$APK" app/build/outputs/apk/debug/FilterSlap-V13-automatic-NO-AI.apk
       - name: Upload test reports for review
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,13 +79,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: V9-7-NO-AI-CC0-photo-comparisons-REVIEW
+          name: V13-NO-AI-CC0-photo-comparisons-REVIEW
           path: app/build/public-photo-pairs/
           if-no-files-found: warn
       - name: Ensure APK has no model weights or native inference engine
         run: |
           set -euo pipefail
-          APK=app/build/outputs/apk/debug/FilterSlap-V9.7-manual-photo-editor-NO-AI.apk
+          APK=app/build/outputs/apk/debug/FilterSlap-V13-automatic-NO-AI.apk
           if unzip -Z1 "$APK" | grep -Ei 'onnx$|tflite$|pth$|pt$|libonnxruntime|libtensorflowlite'; then
             echo "AI model/inference binary is not permitted in the NO-AI APK"
             exit 1
@@ -94,6 +94,6 @@ jobs:
       - name: Upload freshly built debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: FilterSlap-V9.7-manual-photo-editor-NO-AI-debug
-          path: app/build/outputs/apk/debug/FilterSlap-V9.7-manual-photo-editor-NO-AI.apk
+          name: FilterSlap-V13-automatic-NO-AI-debug
+          path: app/build/outputs/apk/debug/FilterSlap-V13-automatic-NO-AI.apk
           if-no-files-found: error

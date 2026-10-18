@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.filterslap.qwezx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 16
-    versionName = "1.5.7-v9.7-manual-editor-no-ai"
+    versionCode = 18
+    versionName = "1.5.9-v13-automatic-no-ai"
 
     val sourceRevision = providers.exec { commandLine("git", "rev-parse", "--short=12", "HEAD") }
       .standardOutput.asText.get().trim()

@@ -68,10 +68,7 @@ import kotlinx.coroutines.ensureActive
 import com.example.engine.v7.EditRecipe
 import com.example.engine.v7.EnhancementOutcome
 import com.example.engine.v7.OfflineEnhancer
-import com.example.engine.manual.ManualAdjustments
-import com.example.engine.manual.ManualPhotoEditor
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -112,48 +109,6 @@ fun FilterSlapApp() {
     var originalUri by remember { mutableStateOf<Uri?>(null) }
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var editedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var automaticBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var manualAdjustments by remember { mutableStateOf(ManualAdjustments()) }
-    var committedManual by remember { mutableStateOf(ManualAdjustments()) }
-    var manualUndo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
-    var manualRedo by remember { mutableStateOf<List<ManualAdjustments>>(emptyList()) }
-    var showManualEditor by remember { mutableStateOf(false) }
-    var useAutoBase by remember { mutableStateOf(false) }
-
-    fun commitManual() {
-        if (manualAdjustments != committedManual) {
-            manualUndo = (manualUndo + committedManual).takeLast(25)
-            committedManual = manualAdjustments
-            manualRedo = emptyList()
-        }
-    }
-    fun resetManual() {
-        commitManual()
-        if (!manualAdjustments.isNeutral) {
-            manualUndo = (manualUndo + manualAdjustments).takeLast(25)
-            manualAdjustments = ManualAdjustments()
-            committedManual = manualAdjustments
-            manualRedo = emptyList()
-        }
-    }
-    fun undoManual() {
-        if (manualUndo.isNotEmpty()) {
-            val previous = manualUndo.last()
-            manualUndo = manualUndo.dropLast(1)
-            manualRedo = manualRedo + manualAdjustments
-            manualAdjustments = previous
-            committedManual = previous
-        }
-    }
-    fun redoManual() {
-        if (manualRedo.isNotEmpty()) {
-            val next = manualRedo.last()
-            manualRedo = manualRedo.dropLast(1)
-            manualUndo = (manualUndo + manualAdjustments).takeLast(25)
-            manualAdjustments = next
-            committedManual = next
-        }
-    }
     var analysisNotes by remember { mutableStateOf<List<String>>(emptyList()) }
 
     var isProcessing by remember { mutableStateOf(false) }
@@ -215,9 +170,12 @@ fun FilterSlapApp() {
                         "Exposure" -> "${decision.regionMask} exposure correction"
                         "Contrast" -> "${decision.regionMask} contrast correction"
                         "LocalToneRecovery" -> "Spatial shadow and local-light recovery"
+                        "CreativeTone" -> "Scene-adaptive tonal separation, shadow depth and highlight roll-off"
                         else -> null
                     } }.distinct().joinToString(", ").ifEmpty { "Source tone retained" },
                     colorAdjustments = buildList {
+                        if (plan.decisions.any { it.parameter == "CreativeColor" })
+                            add("Whole-frame adaptive color grading")
                         if (outcome.modelStrength > 0f)
                             add("Adaptive color strength ${(outcome.modelStrength * 100).toInt()}%; natural-color protection")
                         if (plan.decisions.any { it.parameter == "WhiteBalance" })
@@ -226,7 +184,6 @@ fun FilterSlapApp() {
                 ))
                 withContext(Dispatchers.Main) {
                     if (request == renderRequest && photo == photoRequest) {
-                        automaticBitmap = render.bitmap
                         editedBitmap = render.bitmap
                         unpublished = null
                         activePlan = plan
@@ -273,14 +230,7 @@ fun FilterSlapApp() {
             activeOutcome = null
             analysisNotes = emptyList()
             originalBitmap = null
-            automaticBitmap = null
             editedBitmap = null
-            manualAdjustments = ManualAdjustments()
-            committedManual = manualAdjustments
-            manualUndo = emptyList()
-            manualRedo = emptyList()
-            showManualEditor = false
-            useAutoBase = false
             cachedAnalysis = null
             reportAnalysis = null
             activePlan = null
@@ -358,14 +308,7 @@ fun FilterSlapApp() {
         isProcessing = false
         isHolding = false
         originalBitmap = null
-        automaticBitmap = null
         editedBitmap = null
-        manualAdjustments = ManualAdjustments()
-        committedManual = manualAdjustments
-        manualUndo = emptyList()
-        manualRedo = emptyList()
-        showManualEditor = false
-        useAutoBase = false
         originalUri = null
         cachedAnalysis = null
         reportAnalysis = null
@@ -382,10 +325,7 @@ fun FilterSlapApp() {
         val crop = selectedCrop
         val recipe = activeRecipe ?: return
         val analysis = reportAnalysis ?: return
-        val manualForExport = manualAdjustments
-        val autoForExport = useAutoBase
-        var saveProfile = if(autoForExport) (activePlan?.profileName ?: "AUTO")
-            else "MANUAL_CLASSICAL_NO_AI"
+        var saveProfile = activePlan?.profileName ?: "AUTO"
         val saveNotes = analysisNotes.toMutableList()
         isSaving = true
         coroutineScope.launch(Dispatchers.IO) {
@@ -398,36 +338,22 @@ fun FilterSlapApp() {
                 try {
                     val cropped = cropBitmap(source, crop.aspectRatio)
                     try {
-                        val exportRender = if (autoForExport)
-                            OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
-                            else null
-                        val rendered = exportRender?.bitmap ?: cropped
-                        var finalBitmap:Bitmap? = null
+                        val exportRender = OfflineEnhancer.render(cropped, recipe, analysis, { jobContext.ensureActive() })
+                        val rendered = exportRender.bitmap
+                        saveProfile = exportRender.appliedPlan.profileName
                         try {
-                            finalBitmap = if(manualForExport.isNeutral) rendered
-                                else ManualPhotoEditor.render(rendered,manualForExport) {
-                                    jobContext.ensureActive()
-                                }
-                            outputSize = "${finalBitmap.width} × ${finalBitmap.height}"
-                            saveNotes.clear()
-                            if(exportRender!=null) {
-                                saveProfile = exportRender.appliedPlan.profileName +
-                                    if(manualForExport.isNeutral) "" else " + Manual"
-                                saveNotes.add(exportRender.outcome!!.summary())
-                                saveNotes.addAll(exportRender.appliedPlan.decisions.map { dec ->
-                                    "${dec.parameter}${if(dec.regionMask!="Global") " (${dec.regionMask})" else ""}"
-                                })
-                            } else {
-                                saveProfile="MANUAL_CLASSICAL_NO_AI"
-                                saveNotes.add("Original-based classical manual editing")
+                            outputSize = "${rendered.width} × ${rendered.height}"
+                            // Export renders the immutable recipe the preview approved.
+                            val appliedExportNotes = exportRender.appliedPlan.decisions.map { dec ->
+                                "${dec.parameter}${if (dec.regionMask != "Global") " (${dec.regionMask})" else ""}"
                             }
-                            if(!manualForExport.isNeutral)saveNotes.add("Manual adjustments")
-                            savedUri=saveBitmapToGallery(context, finalBitmap)
+                            saveNotes.clear()
+                            saveNotes.add(exportRender.outcome!!.summary())
+                            saveNotes.addAll(appliedExportNotes)
+                            savedUri = saveBitmapToGallery(context, rendered)
                                 ?: throw java.io.IOException("Gallery export failed")
                         } finally {
-                            if(finalBitmap!=null && finalBitmap!==rendered &&
-                                !finalBitmap.isRecycled)finalBitmap.recycle()
-                            if(rendered!==cropped && !rendered.isRecycled)rendered.recycle()
+                            if (rendered !== cropped && !rendered.isRecycled) rendered.recycle()
                         }
                     } finally {
                         if (cropped !== source && !cropped.isRecycled) cropped.recycle()
@@ -480,47 +406,10 @@ fun FilterSlapApp() {
         else Toast.makeText(context, "Storage permission required to save", Toast.LENGTH_SHORT).show()
     }
 
+    // Comparison must use the same framing as the edited image.
     val comparisonBitmap = remember(originalBitmap, selectedCrop) {
         originalBitmap?.let { cropBitmap(it, selectedCrop.aspectRatio) }
     }
-    // Preview and full-resolution export use original image unless Auto is opt-in.
-    val previewBase = if(useAutoBase) automaticBitmap else comparisonBitmap
-    LaunchedEffect(previewBase, automaticBitmap, manualAdjustments, photoRequest) {
-        val baseline = previewBase ?: return@LaunchedEffect
-        if (manualAdjustments.isNeutral) {
-            val old=editedBitmap
-            editedBitmap = baseline
-            if(old != null && old !== baseline && old !== automaticBitmap &&
-                old !== comparisonBitmap && old !== originalBitmap) {
-                withFrameNanos { }
-                withFrameNanos { }
-                if(old !== editedBitmap && !old.isRecycled)old.recycle()
-            }
-            return@LaunchedEffect
-        }
-        delay(85)
-        val settings = manualAdjustments
-        val candidate = withContext(Dispatchers.Default) {
-            val active = coroutineContext
-            ManualPhotoEditor.render(baseline, settings) { active.ensureActive() }
-        }
-        try {
-            coroutineContext.ensureActive()
-            val old=editedBitmap
-            editedBitmap = candidate
-            if(old != null && old !== candidate && old !== automaticBitmap &&
-                old !== comparisonBitmap && old !== originalBitmap) {
-                withFrameNanos { }
-                withFrameNanos { }
-                if(old !== editedBitmap && !old.isRecycled)old.recycle()
-            }
-        } catch (cancelled: CancellationException) {
-            candidate.recycle()
-            throw cancelled
-        }
-    }
-
-    // Hold to compare uses the original image at the same crop.
 
     if (showHistory) {
         HistorySheet(onDismiss = { showHistory = false }, historyItems = historyItems)
@@ -529,16 +418,13 @@ fun FilterSlapApp() {
         AnalysisSheet(
             onDismiss = { showAnalysis = false },
             analysis = reportAnalysis!!,
-            notes = (if(useAutoBase) analysisNotes else listOf("Original photo used as editing base")) +
-                manualAdjustments.editNotes(),
-            plan = if(useAutoBase) activePlan else null,
-            outcome = if(useAutoBase) activeOutcome else null,
-            isAutoBase = useAutoBase,
+            notes = analysisNotes,
+            plan = activePlan,
+            outcome = activeOutcome,
             selectedCrop = selectedCrop,
             onCropChanged = { frame ->
                 showAnalysis = false
                 editedBitmap = null
-                automaticBitmap = null
                 activePlan = null
                 activeRecipe = null
                 activeOutcome = null
@@ -583,10 +469,6 @@ fun FilterSlapApp() {
                 activePlan = activePlan,
                 outcome = activeOutcome,
                 hasAnalysis = reportAnalysis != null,
-                hasManualEdits = !manualAdjustments.isNeutral,
-                usingAutoBase = useAutoBase,
-                editorOpen = showManualEditor,
-                onOpenEditor = { showManualEditor = true },
                 onHold = { holding -> isHolding = holding },
                 onDiscard = ::discard,
                 onShowAnalysis = { showAnalysis = true },
@@ -599,34 +481,6 @@ fun FilterSlapApp() {
                     }
                 }
             )
-            if (showManualEditor) {
-                ManualEditorTray(
-                    values = manualAdjustments,
-                    enabled = !isProcessing && !isSaving,
-                    useAutoBase = useAutoBase,
-                    onAutoBaseChanged = { useAutoBase = it },
-                    selectedCrop = selectedCrop,
-                    onCropChanged = { frame ->
-                        editedBitmap = null
-                        automaticBitmap = null
-                        activePlan = null
-                        activeRecipe = null
-                        activeOutcome = null
-                        reportAnalysis = null
-                        selectedCrop = frame
-                        applyEdits(frame)
-                    },
-                    canUndo = manualUndo.isNotEmpty(),
-                    canRedo = manualRedo.isNotEmpty(),
-                    onChange = { manualAdjustments = it },
-                    onChangeFinished = ::commitManual,
-                    onUndo = ::undoManual,
-                    onRedo = ::redoManual,
-                    onReset = ::resetManual,
-                    onDismiss = { commitManual(); showManualEditor = false },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-            }
         }
     }
 }
@@ -659,7 +513,7 @@ private fun WelcomeScreen(onOpenPhoto: () -> Unit, onShowHistory: () -> Unit, ha
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Your photo, professionally edited —\nautomatically. No filters to choose.",
+                "A complete photo edit in one tap.\nOffline. No sliders. No AI.",
                 fontSize = 15.sp,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -700,10 +554,6 @@ private fun EditorScreen(
     activePlan: EditPlan?,
     outcome: EnhancementOutcome?,
     hasAnalysis: Boolean,
-    hasManualEdits: Boolean,
-    usingAutoBase: Boolean,
-    editorOpen: Boolean,
-    onOpenEditor: () -> Unit,
     onHold: (Boolean) -> Unit,
     onDiscard: () -> Unit,
     onShowAnalysis: () -> Unit,
@@ -730,8 +580,7 @@ private fun EditorScreen(
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = "Edited photo preview",
-                    modifier = Modifier.fillMaxSize()
-                        .padding(bottom = if(editorOpen) 285.dp else 0.dp),
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -748,9 +597,7 @@ private fun EditorScreen(
             )
         } else if (editedBitmap != null && !isProcessing) {
             PillLabel(
-                text = if (hasManualEdits) "MANUAL EDIT" else
-                    if(usingAutoBase) (outcome?.status?.uppercase() ?: "AUTO CORRECTION")
-                    else "ORIGINAL · READY TO EDIT",
+                text = outcome?.status?.uppercase() ?: "ORIGINAL KEPT",
                 tint = Accent,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp)
             )
@@ -790,8 +637,8 @@ private fun EditorScreen(
             }
         }
 
-        // Bottom bar: editing controls replace actions while open.
-        if (!editorOpen) Column(
+        // Bottom bar: grading profile + save.
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -801,9 +648,7 @@ private fun EditorScreen(
         ) {
             activePlan?.let { plan ->
                 Text(
-                    if(hasManualEdits) "Your edit" else
-                        if(usingAutoBase) (outcome?.status ?: "Auto correction")
-                        else "Original · no automatic changes",
+                    outcome?.status ?: "Auto enhance",
                     color = Accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -817,187 +662,30 @@ private fun EditorScreen(
                 )
                 Spacer(Modifier.height(12.dp))
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            Button(
+                onClick = onSave,
+                enabled = !isSaving && !isProcessing && editedBitmap != null,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Accent,
+                    contentColor = Color(0xFF1A1205),
+                    disabledContainerColor = Accent.copy(alpha = 0.3f),
+                    disabledContentColor = Color(0xFF1A1205).copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier.height(52.dp).fillMaxWidth(0.5f)
             ) {
-                OutlinedButton(
-                    onClick = onOpenEditor,
-                    enabled = !isSaving && !isProcessing && editedBitmap != null,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Accent),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor=Accent),
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.height(52.dp).weight(1f)
-                ) {
-                    Text(if (hasManualEdits) "Adjust · Edited" else "Edit Photo",
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
-                Button(
-                    onClick = onSave,
-                    enabled = !isSaving && !isProcessing && editedBitmap != null,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Accent, contentColor = Color(0xFF1A1205),
-                        disabledContainerColor = Accent.copy(alpha = 0.3f),
-                        disabledContentColor = Color(0xFF1A1205).copy(alpha = 0.5f)
-                    ),
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.height(52.dp).weight(1f)
-                ) {
-                    if (isSaving) CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp), color = Color(0xFF1A1205),
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color(0xFF1A1205),
                         strokeWidth = 2.dp
                     )
-                    else Text("Save Photo", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                } else {
+                    Text("Save Copy", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
     }
-}
-
-/**
- * Real photo editor controls. The photo stays visible until this compact
- * panel is opened; all changes are reversible and rendered offline.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ManualEditorTray(
-    values: ManualAdjustments,
-    enabled: Boolean,
-    useAutoBase: Boolean,
-    onAutoBaseChanged: (Boolean) -> Unit,
-    selectedCrop: CropFrame,
-    onCropChanged: (CropFrame) -> Unit,
-    canUndo: Boolean,
-    canRedo: Boolean,
-    onChange: (ManualAdjustments) -> Unit,
-    onChangeFinished: () -> Unit,
-    onUndo: () -> Unit,
-    onRedo: () -> Unit,
-    onReset: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var activeControl by remember { mutableStateOf("Exposure") }
-    val controls = listOf(
-        ManualTool("Exposure",values.exposure,-2f..2f,"EV"){values.copy(exposure=it)},
-        ManualTool("Contrast",values.contrast,-100f..100f){values.copy(contrast=it)},
-        ManualTool("Highlights",values.highlights,-100f..100f){values.copy(highlights=it)},
-        ManualTool("Shadows",values.shadows,-100f..100f){values.copy(shadows=it)},
-        ManualTool("Whites",values.whites,-100f..100f){values.copy(whites=it)},
-        ManualTool("Blacks",values.blacks,-100f..100f){values.copy(blacks=it)},
-        ManualTool("Warmth",values.temperature,-100f..100f){values.copy(temperature=it)},
-        ManualTool("Tint",values.tint,-100f..100f){values.copy(tint=it)},
-        ManualTool("Vibrance",values.vibrance,-100f..100f){values.copy(vibrance=it)},
-        ManualTool("Saturation",values.saturation,-100f..100f){values.copy(saturation=it)},
-        ManualTool("Vignette",values.vignette,0f..100f){values.copy(vignette=it)}
-    )
-    val selected = controls.firstOrNull { it.name==activeControl } ?: controls.first()
-    Column(
-        modifier=modifier.fillMaxWidth()
-            .background(Color(0xFF12161A),
-                RoundedCornerShape(topStart=24.dp,topEnd=24.dp))
-            .border(1.dp,GlassStroke,
-                RoundedCornerShape(topStart=24.dp,topEnd=24.dp))
-            .navigationBarsPadding()
-            .padding(horizontal=16.dp,vertical=9.dp)
-    ) {
-        Row(modifier=Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-            Text("Edit",fontSize=17.sp,fontWeight=FontWeight.Bold,color=TextPrimary)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick=onUndo,enabled=enabled && canUndo,contentPadding=PaddingValues(horizontal=7.dp)) {
-                Text("Undo",fontSize=12.sp,color=if(canUndo)Accent else TextSecondary)
-            }
-            TextButton(onClick=onRedo,enabled=enabled && canRedo,contentPadding=PaddingValues(horizontal=7.dp)) {
-                Text("Redo",fontSize=12.sp,color=if(canRedo)Accent else TextSecondary)
-            }
-            TextButton(onClick=onReset,enabled=enabled && !values.isNeutral,contentPadding=PaddingValues(horizontal=7.dp)) {
-                Text("Reset",fontSize=12.sp,color=if(!values.isNeutral)Accent else TextSecondary)
-            }
-            TextButton(onClick=onDismiss,contentPadding=PaddingValues(horizontal=7.dp)) {
-                Text("Done",fontSize=13.sp,color=Accent,fontWeight=FontWeight.SemiBold)
-            }
-        }
-        Row(
-            modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement=Arrangement.spacedBy(8.dp),
-            verticalAlignment=Alignment.CenterVertically
-        ) {
-            FilterChip(selected=!useAutoBase,onClick={onAutoBaseChanged(false)},enabled=enabled,
-                label={Text("Original",fontSize=12.sp)},
-                colors=FilterChipDefaults.filterChipColors(
-                    selectedContainerColor=Accent,selectedLabelColor=Color(0xFF1A1205)))
-            FilterChip(selected=useAutoBase,onClick={onAutoBaseChanged(true)},enabled=enabled,
-                label={Text("Auto base",fontSize=12.sp)},
-                colors=FilterChipDefaults.filterChipColors(
-                    selectedContainerColor=Accent,selectedLabelColor=Color(0xFF1A1205)))
-            CropFrame.entries.forEach { frame ->
-                FilterChip(selected=frame==selectedCrop,
-                    onClick={if(frame!=selectedCrop)onCropChanged(frame)},enabled=enabled,
-                    label={Text(frame.displayName,fontSize=11.sp)},
-                    colors=FilterChipDefaults.filterChipColors(
-                        selectedContainerColor=Color(0xFF3B4B48),
-                        selectedLabelColor=TextPrimary))
-            }
-        }
-        Row(
-            modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement=Arrangement.spacedBy(7.dp)
-        ) {
-            controls.forEach { control ->
-                FilterChip(
-                    selected=control.name==activeControl,
-                    onClick={activeControl=control.name},
-                    label={Text(control.name,fontSize=12.sp)},
-                    colors=FilterChipDefaults.filterChipColors(
-                        selectedContainerColor=Accent,selectedLabelColor=Color(0xFF1A1205),
-                        containerColor=Color(0xFF202830),labelColor=TextSecondary),
-                    border=FilterChipDefaults.filterChipBorder(enabled=true,selected=control.name==activeControl,
-                        borderColor=GlassStroke,selectedBorderColor=Color.Transparent)
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        ManualControl(selected.name,selected.value,selected.range,enabled,
-            selected.suffix,onValueChange={onChange(selected.change(it))},
-            onFinished=onChangeFinished)
-        Text("Hold the photo to compare with the original",
-            modifier=Modifier.align(Alignment.CenterHorizontally),
-            color=TextSecondary,fontSize=11.sp)
-    }
-}
-
-private data class ManualTool(
-    val name:String,
-    val value:Float,
-    val range:ClosedFloatingPointRange<Float>,
-    val suffix:String="",
-    val change:(Float)->ManualAdjustments
-)
-
-@Composable
-private fun ManualControl(
-    title: String, value:Float, range: ClosedFloatingPointRange<Float>,
-    enabled:Boolean, suffix:String="", onValueChange:(Float)->Unit, onFinished:()->Unit
-) {
-    Row(modifier=Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-        Text(title,fontSize=13.sp,color=TextPrimary,modifier=Modifier.weight(1f))
-        val valueLabel = if(suffix=="EV") "%+.2f EV".format(value)
-            else "%+.0f".format(value)
-        Text(valueLabel,fontSize=13.sp,color=if(value==0f)TextSecondary else Accent)
-    }
-    Slider(
-        value=value,
-        onValueChange=onValueChange,
-        onValueChangeFinished=onFinished,
-        valueRange=range,
-        enabled=enabled,
-        modifier=Modifier.fillMaxWidth().height(37.dp),
-        colors=SliderDefaults.colors(
-            thumbColor=Accent,
-            activeTrackColor=Accent,
-            inactiveTrackColor=Color(0xFF414B54)
-        )
-    )
 }
 
 @Composable
@@ -1047,7 +735,6 @@ private fun AnalysisSheet(
     notes: List<String>,
     plan: EditPlan?,
     outcome: EnhancementOutcome?,
-    isAutoBase: Boolean,
     selectedCrop: CropFrame,
     onCropChanged: (CropFrame) -> Unit
 ) {
@@ -1085,13 +772,11 @@ private fun AnalysisSheet(
                 ReportRow("Lighting", analysis.report.lighting)
                 ReportRow("Dynamic range", analysis.report.dynamicRange)
                 ReportRow("Exposure bias", analysis.report.histogramBias)
-                ReportRow("Tone action", if(isAutoBase)analysis.report.toneAdjustments.ifEmpty { "—" }
-                    else "Manual only; no automatic corrections",valueTint=InfoBlue)
+                ReportRow("Tone action", analysis.report.toneAdjustments.ifEmpty { "—" }, valueTint = InfoBlue)
             }
             ReportSection("COLOR") {
                 ReportRow("Temperature", analysis.report.colorTemperature)
-                ReportRow("Color action", if(isAutoBase)analysis.report.colorAdjustments.ifEmpty { "—" }
-                    else "Manual only; source colors retained until edited",valueTint=InfoBlue)
+                ReportRow("Color action", analysis.report.colorAdjustments.ifEmpty { "—" }, valueTint = InfoBlue)
             }
             ReportSection("LENS") {
                 ReportRow("Vignette", when {
@@ -1119,11 +804,6 @@ private fun AnalysisSheet(
             }
             ReportSection("DIAGNOSTICS") {
                 ReportRow("Build", BuildConfig.VERSION_NAME + " · " + BuildConfig.SOURCE_REVISION)
-                if(!isAutoBase) {
-                    ReportRow("Engine","MANUAL_CLASSICAL_NO_AI")
-                    ReportRow("Scope","User controlled, full resolution at export")
-                    ReportRow("Base","Unmodified original at chosen crop")
-                }
                 outcome?.let { result ->
                     ReportRow("Engine", result.engine)
                     ReportRow("Result", result.status)
