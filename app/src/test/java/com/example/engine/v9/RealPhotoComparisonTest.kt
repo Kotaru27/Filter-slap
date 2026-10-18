@@ -55,12 +55,11 @@ class RealPhotoComparisonTest {
                 val outcome=requireNotNull(result.outcome)
                 // Prevent a ZIP/APK labelled V9.3 from reporting an older runtime
                 // engine. This uses actual rendered output and compiled BuildConfig.
-                val expectedEngine=if(result.recipe!!.creativeGrade.isNeutral)
-                    "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI"
+                val expectedEngine="V14_CLASSICAL_AUTOEDIT_NO_AI"
                 assertEquals(expectedEngine,outcome.engine)
                 assertEquals(expectedEngine,result.appliedPlan.profileName)
-                assertEquals("1.5.9-v13-automatic-no-ai",BuildConfig.VERSION_NAME)
-                assertEquals(18,BuildConfig.VERSION_CODE)
+                assertEquals("1.6.0-v14-auto-photo-recovery-no-ai",BuildConfig.VERSION_NAME)
+                assertEquals(19,BuildConfig.VERSION_CODE)
                 assertEquals("No pretrained model in classical mode",0f,result.recipe!!.modelStrength,0f)
                 assertNull("No model-based foreground segmentation in classical mode",result.recipe!!.mask)
                 assertTrue("Safety failed for ${file.name}",outcome.damage.safe)
