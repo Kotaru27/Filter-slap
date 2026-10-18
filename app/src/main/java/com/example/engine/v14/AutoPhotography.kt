@@ -23,13 +23,17 @@ data class PhotoTreatment(
     val shoulder: Float = 0f,
     val chroma: Float = 1f,
     val clarity: Float = 0f,
+    val redGain: Float = 1f, val greenGain: Float = 1f, val blueGain: Float = 1f,
     val lowKey: Boolean = false
 ) {
     val isNeutral get() = gamma==1f && contrast==0f && shadow==0f &&
-        shoulder==0f && chroma==1f && clarity==0f
+        shoulder==0f && chroma==1f && clarity==0f &&
+        redGain==1f && greenGain==1f && blueGain==1f
     fun scaled(factor:Float)=PhotoTreatment(
         1f+(gamma-1f)*factor, contrast*factor, shadow*factor,
-        shoulder*factor,1f+(chroma-1f)*factor,clarity*factor,lowKey)
+        shoulder*factor,1f+(chroma-1f)*factor,clarity*factor,
+        1f+(redGain-1f)*factor,1f+(greenGain-1f)*factor,
+        1f+(blueGain-1f)*factor,lowKey)
 }
 
 data class PhotoEvidence(
@@ -140,7 +144,9 @@ object AutoPhotography {
         rr=target+(rr-target)*colorBoost
         gg=target+(gg-target)*colorBoost
         bb=target+(bb-target)*colorBoost
-        rgb[0]=rr;rgb[1]=gg;rgb[2]=bb
+        rgb[0]=rr*treatment.redGain
+        rgb[1]=gg*treatment.greenGain
+        rgb[2]=bb*treatment.blueGain
     }
 
     fun prepare(input:Bitmap, analysis:AnalysisResult,
@@ -155,7 +161,26 @@ object AutoPhotography {
             val pixels=IntArray(sw*sh)
             sample.getPixels(pixels,0,sw,0,0,sw,sh)
             val e=evidence(pixels)
-            val treatment=choose(e)
+            val base=choose(e)
+            val anchors=analysis.neutralAnchors
+            // A white-balance correction is attempted only when multiple
+            // smooth, weakly colored source regions agree. Dominant palette
+            // is NOT evidence that the whole scene must be gray.
+            val reliable=anchors.coverage>.025f &&
+                anchors.halfDisagreement<.048f && anchors.spread<13f &&
+                minOf(anchors.avgR,anchors.avgG,anchors.avgB)>35f &&
+                maxOf(anchors.avgR,anchors.avgG,anchors.avgB)<230f
+            val balance=(anchors.avgR+anchors.avgG+anchors.avgB)/3f
+            val disagreement=if(balance>1f)
+                (maxOf(anchors.avgR,anchors.avgG,anchors.avgB)-
+                    minOf(anchors.avgR,anchors.avgG,anchors.avgB))/balance
+                else 0f
+            val treatment=if(reliable && disagreement>.07f) {
+                fun gain(channel:Float)=
+                    (balance/channel).coerceIn(.88f,1.12f)
+                base.copy(redGain=gain(anchors.avgR),
+                    greenGain=gain(anchors.avgG),blueGain=gain(anchors.avgB))
+            } else base
             val fingerprint="v14-classical-adaptive-camera-development-no-ai"
             val md=MessageDigest.getInstance("SHA-256")
             val stride=max(1,pixels.size/6000)
@@ -168,9 +193,10 @@ object AutoPhotography {
             md.update(fingerprint.toByteArray())
             val id=md.digest().take(8).joinToString("") { "%02x".format(it) }
             val decisions=listOf(
-                "Auto photo treatment: gamma %.3f contrast %.3f shadow %.3f shoulder %.3f chroma %.3f clarity %.3f"
+                "Auto photo treatment: gamma %.3f contrast %.3f shadow %.3f shoulder %.3f chroma %.3f clarity %.3f WB %.3f/%.3f/%.3f"
                     .format(treatment.gamma,treatment.contrast,treatment.shadow,
-                        treatment.shoulder,treatment.chroma,treatment.clarity),
+                        treatment.shoulder,treatment.chroma,treatment.clarity,
+                        treatment.redGain,treatment.greenGain,treatment.blueGain),
                 "Source p10 %.3f p50 %.3f p90 %.3f; low-key preserved=%s"
                     .format(e.p10,e.median,e.p90,e.lowKey),
                 "Classical processing; no network, inference or scene-specific presets"
