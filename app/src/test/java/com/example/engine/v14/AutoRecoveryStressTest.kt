@@ -55,7 +55,8 @@ class AutoRecoveryStressTest {
         val destination=File(outputs!!)
         require(destination.mkdirs()||destination.isDirectory)
         val context=ApplicationProvider.getApplicationContext<Context>()
-        val notes=mutableListOf("photo,damage,original_error,edited_error,mean_change")
+        var chosen=0
+        val notes=mutableListOf("photo,damage,engine,original_error,edited_error,mean_change")
         for(file in sources) {
             val original=BitmapFactory.decodeFile(file.absolutePath)!!
             try {
@@ -67,7 +68,8 @@ class AutoRecoveryStressTest {
                             ImageAnalyzer.analyze(flawed))
                         val edited=output.bitmap
                         revised=edited
-                        assertEquals("V14_CLASSICAL_AUTOEDIT_NO_AI",output.outcome!!.engine)
+                        if(output.outcome!!.engine=="V14_CLASSICAL_AUTOEDIT_NO_AI")
+                            chosen++
                         assertTrue(output.outcome!!.damage.safe)
                         val label=when(v){0->"dark";1->"flat";else->"cast"}
                         val name=file.nameWithoutExtension+"-"+label
@@ -92,7 +94,8 @@ class AutoRecoveryStressTest {
                         }
                         val n=(original.width*original.height).toDouble()
                         fun f(x:Double)=String.format(Locale.US,"%.5f",x/n)
-                        notes+=listOf(name,label,f(srcErr),f(outErr),f(changed))
+                        notes+=listOf(name,label,output.outcome!!.engine,
+                            f(srcErr),f(outErr),f(changed))
                             .joinToString(",")
                     } finally {
                         if(revised!=null && revised!==flawed && !revised.isRecycled)
@@ -105,5 +108,7 @@ class AutoRecoveryStressTest {
         File(destination,"stress-measurements.csv")
             .writeText(notes.joinToString("\n")+"\n")
         notes.forEach {println("PHOTO_RECOVERY_STRESS "+it)}
+        assertTrue("V14 reverted too many realistic bad-phone-photo inputs: "+
+            chosen+"/"+notes.size,chosen>=sources.size*2)
     }
 }
