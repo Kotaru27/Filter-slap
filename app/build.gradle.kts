@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.filterslap.qwezx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 18
-    versionName = "1.5.9-v13-automatic-no-ai"
+    versionCode = 19
+    versionName = "1.6.0-v14-auto-photo-recovery-no-ai"
 
     val sourceRevision = providers.exec { commandLine("git", "rev-parse", "--short=12", "HEAD") }
       .standardOutput.asText.get().trim()

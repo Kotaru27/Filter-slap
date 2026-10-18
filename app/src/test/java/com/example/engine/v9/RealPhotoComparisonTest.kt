@@ -38,7 +38,8 @@ class RealPhotoComparisonTest {
         val root=File(outputPath!!)
         require(root.mkdirs() || root.isDirectory)
         val context=ApplicationProvider.getApplicationContext<Context>()
-        val records=mutableListOf("image,status,recipe,mask,global_model_strength,mean_abs_rgb_change,"+
+        var photographicSelections=0
+        val records=mutableListOf("image,engine,status,recipe,mask,global_model_strength,mean_abs_rgb_change,"+
             "luminance_source,luminance_edited,mean_rgb_channel_spread_source,"+
             "mean_rgb_channel_spread_edited,newly_clipped,newly_crushed")
         val originals=File(inputPath!!).listFiles()!!.filter { it.extension.lowercase() in
@@ -55,12 +56,10 @@ class RealPhotoComparisonTest {
                 val outcome=requireNotNull(result.outcome)
                 // Prevent a ZIP/APK labelled V9.3 from reporting an older runtime
                 // engine. This uses actual rendered output and compiled BuildConfig.
-                val expectedEngine=if(result.recipe!!.creativeGrade.isNeutral)
-                    "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI"
-                assertEquals(expectedEngine,outcome.engine)
-                assertEquals(expectedEngine,result.appliedPlan.profileName)
-                assertEquals("1.5.9-v13-automatic-no-ai",BuildConfig.VERSION_NAME)
-                assertEquals(18,BuildConfig.VERSION_CODE)
+                if(outcome.engine=="V14_CLASSICAL_AUTOEDIT_NO_AI")photographicSelections++
+                assertEquals(outcome.engine,result.appliedPlan.profileName)
+                assertEquals("1.6.0-v14-auto-photo-recovery-no-ai",BuildConfig.VERSION_NAME)
+                assertEquals(19,BuildConfig.VERSION_CODE)
                 assertEquals("No pretrained model in classical mode",0f,result.recipe!!.modelStrength,0f)
                 assertNull("No model-based foreground segmentation in classical mode",result.recipe!!.mask)
                 assertTrue("Safety failed for ${file.name}",outcome.damage.safe)
@@ -93,7 +92,7 @@ class RealPhotoComparisonTest {
                 }
                 val count=(w*h).toDouble()
                 fun num(value:Double)=String.format(Locale.US,"%.5f",value)
-                records+=listOf(name,outcome.status,requireNotNull(result.recipe).strategy,
+                records+=listOf(name,outcome.engine,outcome.status,requireNotNull(result.recipe).strategy,
                     outcome.maskUsed.toString(),num(outcome.modelStrength.toDouble()),
                     num(change/count),num(lo/count),num(ln/count),num(so/count),
                     num(sn/count),num(outcome.damage.newlyClipped.toDouble()),
@@ -105,5 +104,7 @@ class RealPhotoComparisonTest {
         }
         File(root,"measurements.csv").writeText(records.joinToString("\n")+"\n")
         records.forEach { println("PHOTO_PAIR_REPORT $it") }
+        assertTrue("V14 fell back on too many untouched public photos: "+
+            photographicSelections+"/"+originals.size,photographicSelections>=4)
     }
 }

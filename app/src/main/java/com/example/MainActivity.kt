@@ -171,9 +171,13 @@ fun FilterSlapApp() {
                         "Contrast" -> "${decision.regionMask} contrast correction"
                         "LocalToneRecovery" -> "Spatial shadow and local-light recovery"
                         "CreativeTone" -> "Scene-adaptive tonal separation, shadow depth and highlight roll-off"
+                        "PhotoTone" -> "Image-specific exposure, contrast and highlight shaping"
+                        "PhotoLocal" -> "Edge-guided local dodge and burn"
                         else -> null
                     } }.distinct().joinToString(", ").ifEmpty { "Source tone retained" },
                     colorAdjustments = buildList {
+                        if (plan.decisions.any { it.parameter == "PhotoColor" })
+                            add("Scene-adaptive chroma; grayscale preserved")
                         if (plan.decisions.any { it.parameter == "CreativeColor" })
                             add("Whole-frame adaptive color grading")
                         if (outcome.modelStrength > 0f)

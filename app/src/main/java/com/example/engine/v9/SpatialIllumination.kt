@@ -17,6 +17,33 @@ class SpatialIllumination private constructor(
     private val confidence: FloatArray,
     val recoverableFraction: Float
 ) {
+    /**
+     * Guided local illumination estimate for classical photographic dodge/burn.
+     * Rebuilt from the actual source at preview/export resolution; weights
+     * reject cells whose source brightness differs sharply across an edge.
+     */
+    fun baseAt(u: Float, v: Float, sourceY: Float): Float {
+        val px=(u*width-.5f).coerceIn(0f,(width-1).toFloat())
+        val py=(v*height-.5f).coerceIn(0f,(height-1).toFloat())
+        val x=px.toInt(); val y=py.toInt()
+        val xx=min(x+1,width-1); val yy=min(y+1,height-1)
+        val fx=px-x; val fy=py-y
+        val i0=y*width+x; val i1=y*width+xx
+        val i2=yy*width+x; val i3=yy*width+xx
+        fun gate(i:Int):Float {
+            val delta=sourceY-guide[i]
+            return 1f/(1f+65f*delta*delta)
+        }
+        val w0=(1f-fx)*(1f-fy)*gate(i0)
+        val w1=fx*(1f-fy)*gate(i1)
+        val w2=(1f-fx)*fy*gate(i2)
+        val w3=fx*fy*gate(i3)
+        val mass=w0+w1+w2+w3
+        if(mass<1e-7f)return sourceY
+        return ((w0*base[i0]+w1*base[i1]+w2*base[i2]+w3*base[i3])/mass)
+            .coerceIn(0f,1f)
+    }
+
     fun liftAt(u: Float, v: Float, sourceY: Float, strength: Float): Float {
         if (strength <= 0f || sourceY <= .008f || sourceY >= .70f) return 0f
         val px=(u*width-.5f).coerceIn(0f,(width-1).toFloat())
