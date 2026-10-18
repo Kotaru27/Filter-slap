@@ -32,6 +32,8 @@ object OfflineEnhancer {
         repeat(4) {
             try { return render(input,recipe,analysis,checkCancelled) }
             catch (unsafe: UnsafeRenderException) {
+                if(!recipe.photoTreatment.isNeutral)
+                    android.util.Log.w("FilterSlapV14","Photographic candidate strength rejected: "+unsafe.message)
                 recipe=recipe.attenuated(if(it==2) 0f else .5f,
                     "Strength reduced after final-pixel damage check")
             }
@@ -295,7 +297,7 @@ object OfflineEnhancer {
                 output?.setPixels(dest,0,width,0,y,width,1)
             }
             val report=damage.report()
-            if(!verifyOnly && !report.safe) throw UnsafeRenderException("Final render did not pass safety checks")
+            if(!verifyOnly && !report.safe) throw UnsafeRenderException("Final pixel damage: "+report.toString())
             val decisions=mutableListOf<EditDecision>()
             fun decision(name: String,region: String,amount: Float) {
                 if(amount > .0001f) decisions += EditDecision(name,region,"ColorTone",amount,.6f,.5f,.2f)
