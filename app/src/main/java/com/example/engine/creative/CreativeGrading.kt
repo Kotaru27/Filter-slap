@@ -20,15 +20,17 @@ data class CreativeGrade(
     val highlightShoulder: Float = 0f,
     val vibrance: Float = 0f,
     val shadowWarmth: Float = 0f,
-    val highlightWarmth: Float = 0f
+    val highlightWarmth: Float = 0f,
+    val midtoneLift: Float = 0f
 ) {
     val isNeutral: Boolean get() = contrast == 0f && shadowDepth == 0f &&
         highlightShoulder == 0f && vibrance == 0f &&
-        shadowWarmth == 0f && highlightWarmth == 0f
+        shadowWarmth == 0f && highlightWarmth == 0f && midtoneLift == 0f
 
     fun scaled(factor: Float) = CreativeGrade(
         contrast * factor, shadowDepth * factor, highlightShoulder * factor,
-        vibrance * factor, shadowWarmth * factor, highlightWarmth * factor
+        vibrance * factor, shadowWarmth * factor, highlightWarmth * factor,
+        midtoneLift * factor
     )
 }
 
@@ -64,54 +66,83 @@ object CreativeGrading {
             (warmth / count).toFloat())
     }
 
+
     fun propose(before: FrameTones, pixels: IntArray, intentionalDark: Boolean): List<CandidateSettings> {
         val whole = before.whole
         val color = measureColor(pixels)
-        val flat = ((.75f - whole.range) / .42f).coerceIn(0f, 1f)
-        val bright = ((whole.p90 - .73f) / .23f).coerceIn(0f, 1f)
-        val vivid = ((.30f - color.meanChroma) / .25f).coerceIn(0f, 1f)
-        // Avoid introducing conspicuous casts or boosting already vivid colors.
-        // Warm/cool values are small photographic split-toning biases, not white balance.
-        val warmth = (-color.warmBias * .06f).coerceIn(-.012f, .012f)
-        val darkFactor = if (intentionalDark) .40f else 1f
+        val compressed = ((.77f - whole.range) / .48f).coerceIn(0f, 1f)
+        val bright = ((whole.p90 - .72f) / .24f).coerceIn(0f, 1f)
+        val muted = ((.31f - color.meanChroma) / .25f).coerceIn(0f, 1f)
+        val dim = if (intentionalDark) 0f else ((.46f - whole.median) / .28f).coerceIn(0f, 1f)
+        val darkFactor = if (intentionalDark) .38f else 1f
+        // Editorial-level tonal decisions from measured distributions, not
+        // global fixed presets, image categories or a memorized test photograph.
+        val warmth = (-color.warmBias * .04f).coerceIn(-.010f, .010f)
         val base = CreativeGrade(
-            contrast = (.13f + .15f * flat) * darkFactor,
-            shadowDepth = (.012f + .028f * flat) * darkFactor,
-            highlightShoulder = .08f + .22f * bright,
-            vibrance = (.025f + .095f * vivid) * darkFactor,
-            shadowWarmth = -.007f + warmth * .40f,
-            highlightWarmth = .009f + warmth * .40f
+            contrast = (.29f + .21f * compressed) * darkFactor,
+            shadowDepth = (.030f + .042f * compressed) * darkFactor,
+            highlightShoulder = .12f + .23f * bright,
+            vibrance = (.055f + .15f * muted) * darkFactor,
+            shadowWarmth = -.008f + warmth * .45f,
+            highlightWarmth = .010f + warmth * .45f,
+            midtoneLift = .055f * dim
+        )
+        val restrained = base.scaled(.72f)
+        val dimensional = base
+        val controlled = base.copy(
+            contrast = base.contrast * .84f,
+            shadowDepth = base.shadowDepth * .75f,
+            highlightShoulder = min(.43f, base.highlightShoulder * 1.27f),
+            vibrance = base.vibrance * .78f
         )
         return listOf(
-            CandidateSettings("Creative natural grade", creativeGrade = base.scaled(.78f)),
-            CandidateSettings("Creative dimensional grade", creativeGrade = base),
-            CandidateSettings("Creative highlight grade",
-                creativeGrade = base.copy(contrast = base.contrast * .85f,
-                    shadowDepth = base.shadowDepth * .75f,
-                    highlightShoulder = min(.40f, base.highlightShoulder * 1.55f),
-                    vibrance = base.vibrance * .70f))
+            CandidateSettings("Automatic natural grade", creativeGrade = restrained),
+            CandidateSettings("Automatic dimensional grade", creativeGrade = dimensional),
+            CandidateSettings("Automatic highlight-balanced grade", creativeGrade = controlled)
         )
     }
 
     /**
-     * Gain is allowed only for source-evidenced improvements in tonal separation
-     * and bright-end control. Changing pixels for its own sake earns no points.
-     * Artifact, hue and clipping penalties are separately applied by CandidatePlanner.
+     * Compare the actual rendered distribution, not requested slider strengths.
+     * Rewards tonal depth where source shadows allow it, tonal separation in
+     * compressed scenes, and recovery of bright-heavy or overly dim midtones.
+     * The original is still eligible: a strong source image may need no grade.
      */
     fun benefit(before: FrameTones, after: FrameTones, intentionalDark: Boolean): Float {
-        val source = before.whole
-        val result = after.whole
-        val flatNeed = ((.76f - source.range) / .35f).coerceIn(0f, 1f)
-        val highlightNeed = ((source.p90 - .75f) / .18f).coerceIn(0f, 1f)
-        val usefulRange = (result.range - source.range).coerceIn(0f, .13f)
-        val usefulShoulder = (source.p90 - result.p90).coerceIn(0f, .09f)
-        val rangeReward = (if (intentionalDark) .45f else 1f) * 115f * flatNeed * usefulRange
-        val shoulderReward = 105f * highlightNeed * usefulShoulder
-        val midtoneDrift = abs(result.median - source.median)
-        val lostRange = (source.range - result.range).coerceAtLeast(0f)
-        // Avoid calling flattened, darkened or heavily shifted photos more creative.
-        return rangeReward + shoulderReward - midtoneDrift * 22f -
-            lostRange * 80f * (1f - highlightNeed * .6f)
+        val b = before.whole; val a = after.whole
+        val flatNeed = ((.77f - b.range) / .38f).coerceIn(0f, 1f)
+        val brightNeed = ((b.p90 - .76f) / .18f).coerceIn(0f, 1f)
+        val dimNeed = if(intentionalDark) 0f else ((.47f - b.median)/.23f).coerceIn(0f,1f)
+        val shadowHeadroom = if(intentionalDark) 0f else
+            ((b.p10 - .045f) / .16f).coerceIn(0f, 1f)
+        val usefulRange = (a.range - b.range).coerceIn(0f, .16f)
+        val shoulder = (b.p90 - a.p90).coerceIn(0f, .095f)
+        val shadowDepth = (b.p10 - a.p10).coerceIn(0f, .075f)
+        val midtoneRecovery = (a.median - b.median).coerceIn(0f, .10f)
+        val tonal = 135f * flatNeed * usefulRange +
+            115f * brightNeed * shoulder +
+            60f * shadowHeadroom * shadowDepth +
+            95f * dimNeed * midtoneRecovery
+        // A deep grade may shift the median slightly, but arbitrary darkening
+        // or flattening is never a photographic improvement.
+        val driftLimit = .022f + .05f * dimNeed
+        val excessiveDrift = (abs(a.median - b.median) - driftLimit).coerceAtLeast(0f)
+        val flatten = (b.range - a.range).coerceAtLeast(0f)
+        val shadowCrush = if (b.p10 > .08f && a.p10 < .015f) .12f else 0f
+        return tonal - 145f * excessiveDrift - 95f * flatten - 60f * shadowCrush
+    }
+
+    /** Color saturation has photographic value only when the source is muted. */
+    fun colorBenefit(source: IntArray, edited: IntArray): Float {
+        require(source.size == edited.size)
+        if(source.isEmpty())return 0f
+        val original=measureColor(source)
+        val after=measureColor(edited)
+        val muted=((.31f-original.meanChroma)/.22f).coerceIn(0f,1f)
+        val gained=(after.meanChroma-original.meanChroma).coerceIn(0f,.12f)
+        val loss=(original.meanChroma-after.meanChroma).coerceAtLeast(0f)
+        val overlyVivid=(after.meanChroma-.46f).coerceAtLeast(0f)
+        return 110f * muted * gained - 90f * loss - 75f * overlyVivid
     }
 
     /**
@@ -130,7 +161,9 @@ object CreativeGrading {
             (1f - smooth(.25f, .66f, y))
         val shoulder = -grade.highlightShoulder *
             smooth(.60f, .90f, y) * (1f - y) * 2.4f
-        val target = (y + contrast + toe + shoulder).coerceIn(.002f, .995f)
+        // Midtone recovery is image-specific and falls to zero at pure black/white.
+        val midtone = grade.midtoneLift * 4f * y * (1f-y)
+        val target = (y + contrast + toe + shoulder + midtone).coerceIn(.002f, .995f)
         val gain = target / y
         var rr = r * gain
         var gg = g * gain
