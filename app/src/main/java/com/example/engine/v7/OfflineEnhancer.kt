@@ -100,8 +100,14 @@ object OfflineEnhancer {
                 val evidence=CorrectionEvidence(before,intentionalDark,na.coverage,
                     na.halfDisagreement,floatArrayOf(na.avgR,na.avgG,na.avgB),
                     localEvidence.recoverableFraction)
-                val proposals=CandidatePlanner.propose(evidence,false) +
-                    CreativeGrading.propose(before,sourcePixels,intentionalDark)
+                val creative = CreativeGrading.propose(before,sourcePixels,intentionalDark)
+                val hybrid = if(!intentionalDark && localEvidence.recoverableFraction > .025f)
+                    listOf(CandidateSettings("Automatic dimensional local grade",
+                        creativeGrade=creative[1].creativeGrade,
+                        spatialStrength=(.52f+.40f*localEvidence.recoverableFraction)
+                            .coerceIn(.52f,.88f)))
+                else emptyList()
+                val proposals=CandidatePlanner.propose(evidence,false) + creative + hybrid
                 val assessments=mutableListOf<CandidateAssessment>()
                 val candidates=mutableListOf<EditRecipe>()
                 for(strategy in proposals) {
@@ -134,9 +140,11 @@ object OfflineEnhancer {
                                 d.newlyClipped,d.newlyCrushed,d.hueShifted,d.vividBoosted,
                                 beforeNeutral,afterNeutral,spatialQuality,colorIntegrity)
                             if(conventional.safe && !strategy.creativeGrade.isNeutral) {
-                                val reward=CreativeGrading.benefit(before,after,intentionalDark)
-                                conventional.copy(score=conventional.score+reward,
-                                    reason=conventional.reason+"; evidence-based grade benefit %.2f".format(reward))
+                                val tonal=CreativeGrading.benefit(before,after,intentionalDark)
+                                val color=CreativeGrading.colorBenefit(sourcePixels,editedPixels)
+                                conventional.copy(score=conventional.score+tonal+color,
+                                    reason=conventional.reason+
+                                        "; creative tonal %.2f, color %.2f".format(tonal,color))
                             } else conventional
                         } finally { rendered.bitmap.recycle() }
                     } catch(cancelled: CancellationException) { throw cancelled }
@@ -296,7 +304,8 @@ object OfflineEnhancer {
             decision("Shadows","Global",recipe.coherentShadows)
             decision("Highlights","Global",recipe.coherentHighlights)
             decision("CreativeTone","Global",recipe.creativeGrade.contrast +
-                recipe.creativeGrade.shadowDepth + recipe.creativeGrade.highlightShoulder)
+                recipe.creativeGrade.shadowDepth + recipe.creativeGrade.highlightShoulder +
+                abs(recipe.creativeGrade.midtoneLift))
             decision("CreativeColor","Global",recipe.creativeGrade.vibrance +
                 abs(recipe.creativeGrade.shadowWarmth) + abs(recipe.creativeGrade.highlightWarmth))
             if(abs(recipe.redGain-1f)+abs(recipe.greenGain-1f)+abs(recipe.blueGain-1f)>.002f)
