@@ -47,6 +47,42 @@ class SpatialIllumination private constructor(
         return midShadowLift.coerceIn(0f,.19f)
     }
 
+    /**
+     * Signed, edge-aware dodge/burn based on measured neighbourhood illumination.
+     * The output is a bounded luminance delta, not a semantic object mask.
+     * Pure black/white and dark artistic scenes remain protected by caller policy.
+     */
+    fun depthAt(u: Float, v: Float, sourceY: Float, strength: Float): Float {
+        if (strength <= 0f || sourceY <= .025f || sourceY >= .965f) return 0f
+        val px=(u*width-.5f).coerceIn(0f,(width-1).toFloat())
+        val py=(v*height-.5f).coerceIn(0f,(height-1).toFloat())
+        val x=px.toInt(); val y=py.toInt()
+        val xx=min(x+1,width-1); val yy=min(y+1,height-1)
+        val fx=px-x; val fy=py-y
+        val i0=y*width+x;val i1=y*width+xx
+        val i2=yy*width+x;val i3=yy*width+xx
+        val d0=sourceY-guide[i0];val d1=sourceY-guide[i1]
+        val d2=sourceY-guide[i2];val d3=sourceY-guide[i3]
+        val w0=(1f-fx)*(1f-fy)/(1f+90f*d0*d0)
+        val w1=fx*(1f-fy)/(1f+90f*d1*d1)
+        val w2=(1f-fx)*fy/(1f+90f*d2*d2)
+        val w3=fx*fy/(1f+90f*d3*d3)
+        val mass=w0+w1+w2+w3
+        if(mass<1e-7f)return 0f
+        val illum=((w0*base[i0]+w1*base[i1]+w2*base[i2]+w3*base[i3])/mass)
+            .coerceIn(0f,1f)
+        val reliable=((w0*confidence[i0]+w1*confidence[i1]+
+            w2*confidence[i2]+w3*confidence[i3])/mass).coerceIn(0f,1f)
+        val shadow=smooth(.04f,.16f,sourceY)*(1f-smooth(.37f,.65f,sourceY)) *
+            (1f-smooth(.14f,.40f,illum))
+        val bright=smooth(.48f,.70f,sourceY)*(1f-smooth(.88f,.98f,sourceY))*
+            smooth(.54f,.79f,illum)
+        // Lift underexposed neighbourhoods and gently burn already-strong bright
+        // areas, instead of lifting every pixel uniformly.
+        return ((.087f*shadow-.052f*bright)*strength.coerceIn(0f,1f)*reliable)
+            .coerceIn(-.052f,.087f)
+    }
+
     companion object {
         fun build(pixels: IntArray,width: Int,height: Int,noiseLevels: Float=1f): SpatialIllumination {
             require(width > 0 && height > 0 && pixels.size==width*height)
