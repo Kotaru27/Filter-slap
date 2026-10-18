@@ -56,7 +56,7 @@ class RealPhotoComparisonTest {
                 // Prevent a ZIP/APK labelled V9.3 from reporting an older runtime
                 // engine. This uses actual rendered output and compiled BuildConfig.
                 val expectedEngine=if(result.recipe!!.creativeGrade.isNeutral)
-                    "V9_6_CLASSICAL_NO_AI" else "V12_CLASSICAL_CREATIVE_NO_AI"
+                    "V9_6_CLASSICAL_NO_AI" else "V13_CLASSICAL_AUTOMATIC_NO_AI"
                 assertEquals(expectedEngine,outcome.engine)
                 assertEquals(expectedEngine,result.appliedPlan.profileName)
                 assertEquals("1.5.9-v13-automatic-no-ai",BuildConfig.VERSION_NAME)
