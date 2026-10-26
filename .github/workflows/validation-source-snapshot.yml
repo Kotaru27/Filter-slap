@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - name: Verify reviewed source baseline
         run: |
           test "$(git rev-parse HEAD^)" = "d1d0f9a6e6677dc6b60e18f9b6867882bfe87a15"
