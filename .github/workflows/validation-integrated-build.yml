@@ -1,0 +1,91 @@
+name: Filter Slap integrated validation
+on:
+  push:
+    branches: ['validation/filter-slap-integration-20261026']
+    paths:
+      - '.validation/combined-staged-patches.xz.b64'
+      - '.github/workflows/validation-integrated-build.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify pinned review and apply exact staged patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor d1d0f9a6e6677dc6b60e18f9b6867882bfe87a15 HEAD
+          base64 -d .validation/combined-staged-patches.xz.b64 > /tmp/changes.diff.xz
+          echo "27618f981518c7a3ac4859c46baba0bb3c1272c67ee6fe020058d3c79486f1e6  /tmp/changes.diff.xz" | sha256sum -c -
+          xz -dc /tmp/changes.diff.xz > /tmp/changes.diff
+          patch --dry-run --batch --forward -p1 < /tmp/changes.diff
+          patch --batch --forward -p1 < /tmp/changes.diff
+          git diff --check
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+      - name: Prepare public photo tests
+        run: |
+          python -m pip install 'scikit-image==0.25.2'
+          python research/quality/prepare_public_photos.py --output-dir app/build/public-photo-input
+      - name: Compile and run all debug JVM tests
+        env:
+          PHOTO_COMPARE_INPUT: ${{ github.workspace }}/app/build/public-photo-input
+          PHOTO_COMPARE_OUTPUT: ${{ github.workspace }}/app/build/public-photo-pairs
+          FILTER_SLAP_REQUIRE_PHOTOS: '1'
+          FILTER_SLAP_AUDIT_DIRECTORY: ${{ github.workspace }}/app/build/public-photo-input
+          FILTER_SLAP_AUDIT_INPUT: ${{ github.workspace }}/app/build/public-photo-input/astronaut.png
+          FILTER_SLAP_AUDIT_OUTPUT: ${{ github.workspace }}/app/build/public-photo-pairs
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/filter-slap-gradle-test.log
+      - name: Require real-photo regression tests
+        run: python tools/verify_ci_photo_tests.py --results app/build/test-results/testDebugUnitTest
+      - name: Build Android debug APK
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/filter-slap-gradle-apk.log
+          test -s app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+      - name: Check APK signature
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+      - name: Upload Android build and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-slap-integrated-test-evidence
+          path: |
+            /tmp/filter-slap-gradle-test.log
+            /tmp/filter-slap-gradle-apk.log
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 5
+      - name: Upload photo comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-slap-integrated-photos
+          path: app/build/public-photo-pairs/
+          if-no-files-found: ignore
+          retention-days: 5
+      - name: Upload integrated APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilterSlap-integrated-validation-debug
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: 5
