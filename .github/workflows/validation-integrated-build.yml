@@ -5,6 +5,7 @@ on:
     paths:
       - '.validation/combined-staged-patches.xz.b64'
       - '.validation/editorial-v2.diff.xz.b64'
+      - '.validation/editor-v3.diff.xz.b64'
       - '.github/workflows/validation-integrated-build.yml'
   workflow_dispatch:
 jobs:
@@ -48,6 +49,16 @@ jobs:
           xz -dc /tmp/editorial-v2.diff.xz > /tmp/editorial-v2.diff
           patch --dry-run --batch --forward -p1 < /tmp/editorial-v2.diff
           patch --batch --forward -p1 < /tmp/editorial-v2.diff
+          git diff --check
+      - name: Apply scene-aware diagnosis and regional editing V3
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .validation/editor-v3.diff.xz.b64 > /tmp/editor-v3.diff.xz
+          echo "6eac91b8c01dc8ef1fd74876ee29de5fe162831ccc892ed1d433b06f5cd440a3  /tmp/editor-v3.diff.xz" | sha256sum -c -
+          xz -dc /tmp/editor-v3.diff.xz > /tmp/editor-v3.diff
+          patch --dry-run --batch --forward -p1 < /tmp/editor-v3.diff
+          patch --batch --forward -p1 < /tmp/editor-v3.diff
           git diff --check
       - name: Set up Java
         uses: actions/setup-java@v4
