@@ -1,0 +1,38 @@
+name: Validation source snapshot
+on:
+  push:
+    branches:
+      - 'validation/filter-slap-integration-20261026'
+  workflow_dispatch:
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify reviewed source baseline
+        run: |
+          test "$(git rev-parse HEAD^)" = "d1d0f9a6e6677dc6b60e18f9b6867882bfe87a15"
+          test -e app/build.gradle.kts
+          test -e app/src/main/java/com/example/MainActivity.kt
+      - name: Package reviewed source
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile, subprocess
+          files=subprocess.check_output(['git','ls-tree','-r','--name-only','HEAD^'],text=True).splitlines()
+          with zipfile.ZipFile('/tmp/filter-slap-reviewed-source.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for file in files:
+                  p=pathlib.Path(file)
+                  if p.is_file():
+                      z.write(p,'Filter-slap-reviewed/'+file)
+          print('Packaged',len(files),'files')
+          PY
+      - name: Upload reviewed source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-slap-reviewed-source-d1d0f9a6e667
+          path: /tmp/filter-slap-reviewed-source.zip
+          if-no-files-found: error
+          retention-days: 3
