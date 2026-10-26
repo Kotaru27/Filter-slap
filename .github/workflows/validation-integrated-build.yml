@@ -42,7 +42,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -60,12 +60,29 @@ jobs:
           FILTER_SLAP_AUDIT_INPUT: ${{ github.workspace }}/app/build/public-photo-input/astronaut.png
           FILTER_SLAP_AUDIT_OUTPUT: ${{ github.workspace }}/app/build/public-photo-pairs
         run: |
+          set -euo pipefail
           chmod +x gradlew
           ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee /tmp/filter-slap-gradle-test.log
+      - name: Require every JUnit suite to pass
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files=list(Path('app/build/test-results/testDebugUnitTest').rglob('TEST-*.xml'))
+          if not files: raise SystemExit('FAIL: no JUnit result files')
+          totals={'tests':0,'failures':0,'errors':0,'skipped':0}
+          for file in files:
+              root=ET.parse(file).getroot()
+              for key in totals:totals[key]+=int(root.get(key,0))
+          print('JUnit totals:',totals)
+          if totals['failures'] or totals['errors'] or totals['skipped'] or not totals['tests']:
+              raise SystemExit('FAIL: Android unit tests failed or were skipped')
+          PY
       - name: Require real-photo regression tests
         run: python tools/verify_ci_photo_tests.py --results app/build/test-results/testDebugUnitTest
       - name: Build Android debug APK
         run: |
+          set -euo pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/filter-slap-gradle-apk.log
           test -s app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
       - name: Check APK signature
