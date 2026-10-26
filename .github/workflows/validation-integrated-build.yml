@@ -4,6 +4,7 @@ on:
     branches: ['validation/filter-slap-integration-20261026']
     paths:
       - '.validation/combined-staged-patches.xz.b64'
+      - '.validation/editorial-v2.diff.xz.b64'
       - '.github/workflows/validation-integrated-build.yml'
   workflow_dispatch:
 jobs:
@@ -37,6 +38,16 @@ jobs:
               raise SystemExit('Unexpected Batch41 payload state; refusing repair')
           p.write_text(s.replace(bad,'}\n'))
           PY
+          git diff --check
+      - name: Apply real regional editing engine revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .validation/editorial-v2.diff.xz.b64 > /tmp/editorial-v2.diff.xz
+          echo "c0f17cdd8c6e0de6352e7435f2de5eaca3cd25b938dffeae6134dbde85de4cf0  /tmp/editorial-v2.diff.xz" | sha256sum -c -
+          xz -dc /tmp/editorial-v2.diff.xz > /tmp/editorial-v2.diff
+          patch --dry-run --batch --forward -p1 < /tmp/editorial-v2.diff
+          patch --batch --forward -p1 < /tmp/editorial-v2.diff
           git diff --check
       - name: Set up Java
         uses: actions/setup-java@v4
