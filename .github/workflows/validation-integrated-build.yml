@@ -26,6 +26,17 @@ jobs:
           xz -dc /tmp/changes.diff.xz > /tmp/changes.diff
           patch --dry-run --batch --forward -p1 < /tmp/changes.diff
           patch --batch --forward -p1 < /tmp/changes.diff
+          # Batch 41's generated test omitted its final newline, merging a diff header.
+          # Fail closed unless the known packaging defect is the only corruption.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/test/java/com/example/engine/v7/ClassicalRegionConnectivityTest.kt')
+          s=p.read_text()
+          bad='}--- /dev/null'
+          if s.count(bad)!=1:
+              raise SystemExit('Unexpected Batch41 payload state; refusing repair')
+          p.write_text(s.replace(bad,'}\n'))
+          PY
           git diff --check
       - name: Set up Java
         uses: actions/setup-java@v4
